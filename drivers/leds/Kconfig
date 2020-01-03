@@ -180,6 +180,14 @@ config LEDS_GPIO
 	  defined as platform devices and/or OpenFirmware platform devices.
 	  The code to use these bindings can be selected below.
 
+config ZTE_LEDS_GPIO
+	tristate "LED Support for GPIO connected LEDs"
+	depends on LEDS_CLASS
+	depends on GPIOLIB
+	help
+	  This option enables support for LEDS connected to AP GPIO or
+	  PM GPIO outputs.
+
 config LEDS_LP3944
 	tristate "LED Support for N.S. LP3944 (Fun Light) I2C chip"
 	depends on LEDS_CLASS
@@ -552,12 +560,29 @@ config LEDS_VERSATILE
 	  This option enabled support for the LEDs on the ARM Versatile
 	  and RealView boards. Say Y to enabled these.
 
+config LEDS_MSM_QMI
+	tristate "LED Support for Qualcomm PMIC connected LEDs"
+	default n
+	depends on ARCH_MSM
+	help
+	  This option enables support for LEDs connected over PMIC
+	  (Power Management IC) chip on Qualcomm reference boards,
+	  for example SURF and FFAs.
+
 config LEDS_AW2013
 	tristate "LED support for AW2013"
 	depends on LEDS_CLASS && I2C
 	help
 	  This option enables support for the AW2013 RGB LED connected
 	  through I2C. Say Y to enable support for the AW2013 LED.
+
+config ZTE_LCD_MAX_BRIGHTNESS_CTRL
+	bool "Support for max brightness ctrl avoid to 0 when thermal works"
+	default n
+
+config USE_SINGLE_PMIC_FLASH
+	bool "Support for single pmic flash"
+	default n
 
 comment "LED Triggers"
 source "drivers/leds/trigger/Kconfig"
