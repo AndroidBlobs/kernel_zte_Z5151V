@@ -1739,16 +1739,36 @@ static bool qtaguid_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	 * Thus (!a && b) || (a && !b) == a ^ b
 	 */
 	if (info->match & XT_QTAGUID_UID) {
-		kuid_t uid_min = make_kuid(&init_user_ns, info->uid_min);
-		kuid_t uid_max = make_kuid(&init_user_ns, info->uid_max);
+#ifdef ZTE_MULTIPLE_UID_LIMIT_NET_RATE
+		if (info->uid_array_pos) {
+			__u32 i = 0, is_match_uid = 0;
+			kuid_t temp_uid;
 
-		if ((uid_gte(sock_uid, uid_min) &&
-		     uid_lte(sock_uid, uid_max)) ^
-		    !(info->invert & XT_QTAGUID_UID)) {
-			MT_DEBUG("qtaguid[%d]: leaving uid not matching\n",
-				 par->hooknum);
-			res = false;
-			goto put_sock_ret_res;
+			for (;i < info->uid_array_pos; i++) {
+				temp_uid = make_kuid(&init_user_ns, info->uid_array[i]);
+				if (uid_eq(temp_uid, sock_uid)) {
+					is_match_uid = 1;
+					break;
+				}
+			}
+			if (is_match_uid ^ !(info->invert & XT_OWNER_UID)) {
+				res = false;
+				goto put_sock_ret_res;
+			}
+		} else
+#endif
+		{
+			kuid_t uid_min = make_kuid(&init_user_ns, info->uid_min);
+			kuid_t uid_max = make_kuid(&init_user_ns, info->uid_max);
+
+			if ((uid_gte(sock_uid, uid_min) &&
+			     uid_lte(sock_uid, uid_max)) ^
+			    !(info->invert & XT_QTAGUID_UID)) {
+				MT_DEBUG("qtaguid[%d]: leaving uid not matching\n",
+					 par->hooknum);
+				res = false;
+				goto put_sock_ret_res;
+			}
 		}
 	}
 	if (info->match & XT_QTAGUID_GID) {
@@ -2293,7 +2313,7 @@ static int ctrl_cmd_tag(const char *input)
 			BUG_ON(tag_ref_entry->num_sock_tags <= 0);
 			tag_ref_entry->num_sock_tags--;
 			free_tag_ref_from_utd_entry(tag_ref_entry,
-						    uid_tag_data_entry);
+					uid_tag_data_entry);
 			spin_unlock_bh(&uid_tag_data_tree_lock);
 			spin_unlock_bh(&sock_tag_list_lock);
 			res = -ENOMEM;
