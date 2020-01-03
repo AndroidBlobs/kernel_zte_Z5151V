@@ -44,8 +44,9 @@ ifeq ($(TARGET_PREBUILT_KERNEL),)
 
 KERNEL_GCC_NOANDROID_CHK := $(shell (echo "int main() {return 0;}" | $(KERNEL_CROSS_COMPILE)gcc -E -mno-android - > /dev/null 2>&1 ; echo $$?))
 ifeq ($(strip $(KERNEL_GCC_NOANDROID_CHK)),0)
-KERNEL_CFLAGS := KCFLAGS=-mno-android
+KERNEL_CFLAGS += KCFLAGS+=-mno-android
 endif
+$(warning KERNEL_GCC_NOANDROID_CHK = $(KERNEL_GCC_NOANDROID_CHK) KERNEL_CFLAGS=$(KERNEL_CFLAGS))
 
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 current_dir := $(notdir $(patsubst %/,%,$(dir $(mkfile_path))))
@@ -120,8 +121,20 @@ $(KERNEL_USR): $(KERNEL_HEADERS_INSTALL)
 $(TARGET_PREBUILT_INT_KERNEL): $(KERNEL_USR)
 endif
 
+ifeq ($(SIGNKEY_SMARTRON),true)
+ifeq ($(TARGET_BUILD_VARIANT),user)
+    $(info Using smartron key sign kernel.)
+    KERNEL_MODULE_KEYS := zte_security/smartron_keys/kernel_module_keys
+endif
+endif
+ifneq ($(KERNEL_MODULE_KEYS),)
 $(KERNEL_OUT):
 	mkdir -p $(KERNEL_OUT)
+	cp -f $(KERNEL_MODULE_KEYS)/* $(KERNEL_OUT)
+else
+$(KERNEL_OUT):
+	mkdir -p $(KERNEL_OUT)
+endif
 
 $(KERNEL_CONFIG): $(KERNEL_OUT)
 	$(MAKE) -C $(TARGET_KERNEL_SOURCE) O=$(BUILD_ROOT_LOC)$(KERNEL_OUT) ARCH=$(KERNEL_ARCH) CROSS_COMPILE=$(KERNEL_CROSS_COMPILE) $(KERNEL_DEFCONFIG)
