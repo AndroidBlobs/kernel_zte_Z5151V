@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -87,6 +87,9 @@ MODULE_PARM_DESC(hvdcp_max_current, "max current drawn for HVDCP charger");
 int dcp_max_current = DWC3_IDEV_CHG_MAX;
 module_param(dcp_max_current, int, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(dcp_max_current, "max current drawn for DCP charger");
+
+/* Usb online lpm test requirement, 1/5 */
+static bool forge_usb_offline = 0;
 
 /* XHCI registers */
 #define USB3_HCSPARAMS1		(0x4)
@@ -233,12 +236,12 @@ struct dwc3_msm {
 	enum usb_otg_state	otg_state;
 	enum usb_chg_state	chg_state;
 	int			pmic_id_irq;
+	struct work_struct	bus_vote_w;
 	enum dwc3_perf_mode     mode;
 	unsigned int		bus_vote;
 	u32			bus_perf_client;
 	struct msm_bus_scale_pdata	*bus_scale_table;
 	struct power_supply	usb_psy;
-	enum power_supply_type	usb_supply_type;
 	unsigned int		online;
 	bool			in_host_mode;
 	unsigned int		voltage_max;
@@ -275,6 +278,14 @@ struct dwc3_msm {
 	struct pm_qos_request   pm_qos_req_dma;
 	struct delayed_work     perf_vote_work;
 	enum dwc3_perf_mode	curr_mode;
+	/* Usb online lpm test requirement, 2/5 */
+	struct class *lpm_test_class;
+	struct device *lpm_test_dev;
+
+	/* wall charger in which D+/D- is disconnected
+		would be recognized as usb cable, 1/5 */
+	struct delayed_work	invalid_chg_work;
+	/* end */
 };
 
 #define USB_HSPHY_3P3_VOL_MIN		3050000 /* uV */
@@ -296,6 +307,41 @@ struct dwc3_msm {
 
 static void dwc3_pwr_event_handler(struct dwc3_msm *mdwc);
 static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA);
+/* wall charger in which D+/D- is disconnected
+	would be recognized as an usb cable, 2/5 */
+static int skip_invalid_chg_work = 0;
+#define DWC3_IDEV_CHG_INVALID	501
+
+static void dwc3_invalid_chg_work(struct work_struct *w)
+{
+	struct dwc3_msm *mdwc = container_of(w, struct dwc3_msm, invalid_chg_work.work);
+
+	if (skip_invalid_chg_work) {
+		dev_info(mdwc->dev, "do skip_invalid_chg_work\n");
+		skip_invalid_chg_work = 0;
+		return;
+	}
+
+	dev_info(mdwc->dev, "usb schedule %s\n", __func__);
+	dwc3_msm_gadget_vbus_draw(mdwc, DWC3_IDEV_CHG_INVALID);
+}
+/*end*/
+
+
+/*
+ * for notify otg from gadget, 8/8
+ * event 1:  skip invalid_chg work, as usb has already been configured
+ * event 2:  ...
+ */
+static int dwc3_extra_event_from_gadget(struct dwc3_msm *mdwc, unsigned event)
+{
+	if (event == 1) {
+		dev_dbg(mdwc->dev, "prepare skip_invalid_chg_work\n");
+		skip_invalid_chg_work = 1;
+	}
+	return 0;
+}
+/* end */
 
 /**
  *
@@ -1876,6 +1922,13 @@ static void dwc3_msm_notify_event(struct dwc3 *dwc, unsigned event,
 	case DWC3_CONTROLLER_NOTIFY_DISABLE_UPDXFER:
 		dwc3_msm_dbm_disable_updxfer(dwc, value);
 		break;
+		/* for notify otg from gadget, 7/8 */
+	case DWC3_CONTROLLER_GADGET_EXTRA_EVENT:
+		dev_dbg(mdwc->dev, "DWC3_CONTROLLER_GADGET_EXTRA_EVENT received\n");
+		dwc3_extra_event_from_gadget(mdwc, dwc->extra_event);
+		break;
+	/* end */
+
 	default:
 		dev_dbg(mdwc->dev, "unknown dwc3 event\n");
 		break;
@@ -2512,9 +2565,6 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = mdwc->online;
 		break;
-	case POWER_SUPPLY_PROP_REAL_TYPE:
-		val->intval = mdwc->usb_supply_type;
-		break;
 	case POWER_SUPPLY_PROP_TYPE:
 		val->intval = psy->type;
 		break;
@@ -2575,6 +2625,11 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 		dev_dbg(mdwc->dev, "%s: notify xceiv event with val:%d\n",
 							__func__, val->intval);
+
+		/* Usb online lpm test requirement, 3/5 */
+		if (forge_usb_offline)
+			forge_usb_offline = 0;
+
 		/*
 		 * Now otg_sm_work() state machine waits for USB cable status.
 		 * Hence here it makes sure that schedule resume work only if
@@ -2623,22 +2678,10 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 						mdwc->bc1p2_current_max);
 		}
 		break;
-	case POWER_SUPPLY_PROP_REAL_TYPE:
-		mdwc->usb_supply_type = val->intval;
-		/*
-		 * Update TYPE property to DCP for HVDCP/HVDCP3 charger types
-		 * so that they can be recongized as AC chargers by healthd.
-		 * Don't report UNKNOWN charger type to prevent healthd missing
-		 * detecting this power_supply status change.
-		 */
-		if (mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP_3
-			|| mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP)
-			psy->type = POWER_SUPPLY_TYPE_USB_DCP;
-		else if (mdwc->usb_supply_type == POWER_SUPPLY_TYPE_UNKNOWN)
-			psy->type = POWER_SUPPLY_TYPE_USB;
-		else
-			psy->type = mdwc->usb_supply_type;
-		switch (mdwc->usb_supply_type) {
+	case POWER_SUPPLY_PROP_TYPE:
+		psy->type = val->intval;
+
+		switch (psy->type) {
 		case POWER_SUPPLY_TYPE_USB:
 			mdwc->chg_type = DWC3_SDP_CHARGER;
 			mdwc->voltage_max = MICRO_5V;
@@ -2690,7 +2733,7 @@ dwc3_msm_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
-	case POWER_SUPPLY_PROP_REAL_TYPE:
+	case POWER_SUPPLY_PROP_TYPE:
 		return 1;
 	default:
 		break;
@@ -2714,7 +2757,6 @@ static enum power_supply_property dwc3_msm_pm_power_props_usb[] = {
 	POWER_SUPPLY_PROP_TYPE,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_USB_OTG,
-	POWER_SUPPLY_PROP_REAL_TYPE,
 };
 
 static irqreturn_t dwc3_pmic_id_irq(int irq, void *data)
@@ -2852,6 +2894,64 @@ static int dwc3_msm_get_clk_gdsc(struct dwc3_msm *mdwc)
 	return 0;
 }
 
+
+
+static ssize_t set_usb_online_fn(struct device *dev,
+						struct device_attribute *attr,
+						const char *buf, size_t count)
+{
+	int online;
+	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+
+	if (kstrtoint(buf, 10, &online) < 0)
+	    return -EINVAL;
+
+	online = !!online;
+	pr_info("%s, online : %d\n", __func__, online);
+
+	mdwc->vbus_active = online;
+	dwc3_ext_event_notify(mdwc);
+
+	forge_usb_offline = !online;
+
+	return count;
+}
+
+static DEVICE_ATTR(set_usb_online, S_IWUSR, NULL, set_usb_online_fn);
+
+static struct device_attribute *lpm_test_attributes[] = {
+	&dev_attr_set_usb_online,
+	NULL
+};
+
+static int lpm_test_create_device(struct dwc3_msm *motg)
+{
+	struct device_attribute **attrs = lpm_test_attributes;
+	struct device_attribute *attr;
+	int err;
+
+	pr_debug("%s\n", __func__);
+	motg->lpm_test_class = class_create(THIS_MODULE, "charger");
+	if (IS_ERR(motg->lpm_test_class))
+	    return PTR_ERR(motg->lpm_test_class);
+
+	motg->lpm_test_dev = device_create(motg->lpm_test_class, NULL, 0, NULL, "test");
+	if (IS_ERR(motg->lpm_test_dev))
+	    return PTR_ERR(motg->lpm_test_dev);
+
+	dev_set_drvdata(motg->lpm_test_dev, motg);
+
+	while ((attr = *attrs++)) {
+	    err = device_create_file(motg->lpm_test_dev, attr);
+	    if (err) {
+		device_destroy(motg->lpm_test_class, 0);
+		return err;
+	    }
+	}
+	return 0;
+}
+
+
 static ssize_t mode_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
@@ -2954,6 +3054,11 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 	INIT_WORK(&mdwc->restart_usb_work, dwc3_restart_usb_work);
 	INIT_DELAYED_WORK(&mdwc->sm_work, dwc3_msm_otg_sm_work);
 	INIT_DELAYED_WORK(&mdwc->perf_vote_work, dwc3_msm_otg_perf_vote_work);
+	/* wall charger in which D+/D- is disconnected
+		would be recognized as usb cable, 5/5 */
+	INIT_DELAYED_WORK(&mdwc->invalid_chg_work, dwc3_invalid_chg_work);
+	/* end */
+
 
 	mdwc->sm_usb_wq = create_freezable_workqueue("k_sm_usb");
 	 if (!mdwc->sm_usb_wq) {
@@ -3324,6 +3429,12 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 		dev_dbg(&pdev->dev, "DWC3 in host mode\n");
 		mdwc->id_state = DWC3_ID_GROUND;
 		dwc3_ext_event_notify(mdwc);
+	}
+
+	/* Usb online lpm test requirement, 4/5 */
+	ret = lpm_test_create_device(mdwc);
+	if (ret) {
+	    dev_err(&pdev->dev, "fail to setup lpm_test_device\n");
 	}
 
 	return 0;
@@ -3771,10 +3882,13 @@ static int dwc3_otg_start_peripheral(struct dwc3_msm *mdwc, int on)
 static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 {
 	enum power_supply_type power_supply_type;
-	union power_supply_propval propval;
 
 	if (mdwc->charging_disabled)
 		return 0;
+
+	/* Usb online lpm test requirement, 5/5 */
+	if (forge_usb_offline)
+	    return 0;
 
 	if (mdwc->chg_type != DWC3_INVALID_CHARGER) {
 		dev_dbg(mdwc->dev,
@@ -3796,9 +3910,7 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 	else
 		power_supply_type = POWER_SUPPLY_TYPE_UNKNOWN;
 
-	propval.intval = power_supply_type;
-	mdwc->usb_psy.set_property(&mdwc->usb_psy,
-			POWER_SUPPLY_PROP_REAL_TYPE, &propval);
+	power_supply_set_supply_type(&mdwc->usb_psy, power_supply_type);
 
 skip_psy_type:
 
@@ -3997,6 +4109,10 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 					if (mdwc->chg_type != DWC3_SDP_CHARGER)
 						break;
 				}
+				/* wall charger in which D+/D- is disconnected
+				would be recognized as an usb cable, 4.1/5 */
+				schedule_delayed_work(&mdwc->invalid_chg_work, 5*HZ);
+				/* end */
 				dwc3_otg_start_peripheral(mdwc, 1);
 				mdwc->otg_state = OTG_STATE_B_PERIPHERAL;
 				dbg_event(0xFF, "Undef SDP",
@@ -4067,6 +4183,10 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 				dwc3_otg_start_peripheral(mdwc, 1);
 				mdwc->otg_state = OTG_STATE_B_PERIPHERAL;
 				work = 1;
+				/* wall charger in which D+/D- is disconnected
+				would be recognized as an usb cable, 4.2/5 */
+				schedule_delayed_work(&mdwc->invalid_chg_work, 5*HZ);
+				/* end */
 				break;
 			/* fall through */
 			default:
@@ -4074,6 +4194,12 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 			}
 		} else {
 			mdwc->typec_current_max = 0;
+			/* wall charger in which D+/D- is disconnected
+				would be recognized as an usb cable, 5/5 */
+			dev_dbg(mdwc->dev,  "cancel invalid_chg_work\n");
+			cancel_delayed_work_sync(&mdwc->invalid_chg_work);
+			skip_invalid_chg_work = 0;
+			/* end */
 			dwc3_msm_gadget_vbus_draw(mdwc, 0);
 			dev_dbg(mdwc->dev, "No device, allowing suspend\n");
 			dbg_event(0xFF, "RelNodev", 0);
