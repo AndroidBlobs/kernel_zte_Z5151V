@@ -912,5 +912,13 @@ config WCD_DSP_GLINK
 	   provides read and write interface via char device.
 
 source "drivers/soc/qcom/memshare/Kconfig"
+source "drivers/soc/qcom/vendor/Kconfig"
+
+config ZTE_BOOT_MODE
+	depends on ARCH_MSM8937
+	bool "ZTE BOOT MODE"
+	default n
+	help
+	   Support for boot mode
 
 endif # ARCH_MSM
