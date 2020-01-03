@@ -334,6 +334,7 @@ config ARCH_SDM450
 config ARCH_MSM8937
 	bool "Enable Support for Qualcomm Technologies Inc MSM8937"
 	depends on ARCH_MSM
+	select ZTE_BOOT_MODE
 	help
 	  This enables support for the MSM8937 chipset. If you don't
 	  know what to do here, say N
@@ -361,6 +362,80 @@ config ARCH_MSM8994_V1_TLBI_WA
 	  [39:38] bits of VA are tied to zero and due to which TLBI
 	  operations with VA or ASID will not work.
 
+endmenu
+config ZTE_PIL_AUTH_ERROR_DETECTION
+	bool "ZTE PIL AUTH ERROR DETECTION"
+	default n
+	help
+	  When authorization of PIL images is failed, the system
+	  will enter into UNAUTH mode to show related error message.
+menu "ZTE Board Selection"
+
+config BOARD_SMILE8917
+        depends on ARCH_MSM8917
+        bool "ZTE SMILE8917"
+        help
+          Support for ZTE MSM8917 SMILE8917 device.
+
+config BOARD_CRINUM
+        depends on ARCH_MSM8917
+        bool "ZTE CRINUM"
+        help
+          Support for ZTE MSM8917 CRINUM device.
+
+config BOARD_FINSBURY
+	depends on ARCH_MSM8920
+	bool "ZTE FINSBURY"
+	help
+	  Support for ZTE MSM8920 FINSBURY device.
+
+config BOARD_ZEUS
+	depends on ARCH_MSM8920
+	bool "ZTE ZEUS"
+	help
+	  Support for ZTE MSM8920 ZEUS device.
+
+config BOARD_TESLA
+        depends on ARCH_MSM8920
+        bool "ZTE TESLA"
+        help
+          Support for ZTE MSM8920 TESLA device.
+
+config BOARD_GULDAN
+        depends on ARCH_MSM8920
+        bool "ZTE GULDAN"
+        help
+          Support for ZTE MSM8920 GULDAN device.
+
+config BOARD_SPERO
+	depends on ARCH_MSM8940
+	bool "ZTE SPERO"
+	help
+	  Support for ZTE MSM8940 SPERO device.
+
+config BOARD_COCONUT
+	depends on ARCH_MSM8940
+	bool "ZTE COCONUT"
+	help
+	  Support for ZTE MSM8940 COCONUT device.
+
+config BOARD_MAXXL2
+        depends on ARCH_MSM8940
+        bool "ZTE MAXXL2"
+        help
+          Support for ZTE MSM8940 MAXXL2 device.
+
+config BOARD_DAISY
+        depends on ARCH_MSM8940
+        bool "ZTE DAISY"
+        help
+          Support for ZTE MSM8940 DAISY device.
+
+config BOARD_DAPHNE
+        depends on ARCH_MSM8940
+        bool "ZTE DAPHNE"
+        help
+          Support for ZTE MSM8940 DAPHNE device.
 endmenu
 
 menu "Bus support"
@@ -1140,3 +1215,8 @@ endif
 source "lib/Kconfig"
 
 source "arch/arm64/mm/Kconfig"
+
+config ENABLE_POWER_REASON_NODE
+	bool "Power reason node"
+	help
+	  Power reason node.

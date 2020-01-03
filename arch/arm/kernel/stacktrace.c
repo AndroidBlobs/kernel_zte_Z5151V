@@ -123,7 +123,7 @@ static noinline void __save_stack_trace(struct task_struct *tsk,
 	data.no_sched_functions = nosched;
 
 	if (tsk != current) {
-#ifdef CONFIG_SMP
+/*#ifdef CONFIG_SMP
 		/*
 		 * What guarantees do we have here that 'tsk' is not
 		 * running on another CPU?  For now, ignore it as we
@@ -133,11 +133,12 @@ static noinline void __save_stack_trace(struct task_struct *tsk,
 			trace->entries[trace->nr_entries++] = ULONG_MAX;
 		return;
 #else
+*/
 		frame.fp = thread_saved_fp(tsk);
 		frame.sp = thread_saved_sp(tsk);
 		frame.lr = 0;		/* recovered from the stack */
 		frame.pc = thread_saved_pc(tsk);
-#endif
+/*#endif*/
 	} else {
 		register unsigned long current_sp asm ("sp");
 
