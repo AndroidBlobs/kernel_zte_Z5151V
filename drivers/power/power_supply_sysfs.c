@@ -47,7 +47,8 @@ static ssize_t power_supply_show_property(struct device *dev,
 		"Unknown", "Battery", "UPS", "Mains", "USB", "USB_DCP",
 		"USB_CDP", "USB_ACA", "USB_HVDCP", "USB_HVDCP_3", "USB_PD",
 		"Wireless", "USB_FLOAT", "BMS", "Parallel", "Main", "Wipower",
-		"TYPEC", "TYPEC_UFP", "TYPEC_DFP"
+		"TYPEC", "TYPEC_UFP", "TYPEC_DFP",
+		"TYPEC_AUDIO_ACCESSORY",                     /*Add support for TypeC Audio Accessory  2/7*/
 	};
 	static char *status_text[] = {
 		"Unknown", "Charging", "Discharging", "Not charging", "Full"
@@ -131,6 +132,10 @@ static ssize_t power_supply_show_property(struct device *dev,
 	else if (off == POWER_SUPPLY_PROP_CONNECTOR_HEALTH)
 		return snprintf(buf, PAGE_SIZE,
 					"%s\n", health_text[value.intval]);
+	else if (off == POWER_SUPPLY_PROP_BATTERY_MODULE_PACK_VENDOR)
+		return snprintf(buf, PAGE_SIZE, "%02d\n", value.intval);
+	else if (off == POWER_SUPPLY_PROP_SHIPPING_MODE)
+		return snprintf(buf, PAGE_SIZE, "%02d\n", value.intval);
 	else if (off >= POWER_SUPPLY_PROP_MODEL_NAME)
 		return sprintf(buf, "%s\n", value.strval);
 
@@ -272,6 +277,7 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(charge_qnovo_enable),
 	POWER_SUPPLY_ATTR(current_qnovo),
 	POWER_SUPPLY_ATTR(voltage_qnovo),
+	POWER_SUPPLY_ATTR(ship_mode),
 	POWER_SUPPLY_ATTR(rerun_aicl),
 	POWER_SUPPLY_ATTR(cycle_count_id),
 	POWER_SUPPLY_ATTR(safety_timer_expired),
@@ -306,9 +312,16 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(die_health),
 	POWER_SUPPLY_ATTR(connector_health),
 	POWER_SUPPLY_ATTR(hw_current_max),
+	POWER_SUPPLY_ATTR(shutdown),
+	POWER_SUPPLY_ATTR(battery_module_pack_vendor),
+	POWER_SUPPLY_ATTR(shipping_mode),
 	POWER_SUPPLY_ATTR(real_type),
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_ATTR(charge_counter_ext),
+	POWER_SUPPLY_ATTR(bms_status),
+	POWER_SUPPLY_ATTR(bms_flags),
+	POWER_SUPPLY_ATTR(bms_rc),
+	POWER_SUPPLY_ATTR(qmax),
 	/* Properties of type `const char *' */
 	POWER_SUPPLY_ATTR(model_name),
 	POWER_SUPPLY_ATTR(manufacturer),

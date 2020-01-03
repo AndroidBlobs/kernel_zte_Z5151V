@@ -36,6 +36,7 @@
 
 /* Interrupt offsets */
 #define INT_RT_STS_REG(base)		(base + 0x10)
+#define VBUS_ERR_BIT			BIT(6)  /*TypeC Audio Accessory  3/7*/
 #define DFP_DETECT_BIT			BIT(3)
 #define UFP_DETECT_BIT			BIT(1)
 
@@ -48,6 +49,7 @@
 
 #define TYPEC_DFP_STATUS_REG(base)	(base +	0x09)
 #define VALID_DFP_MASK			TYPEC_MASK(6, 4)
+#define AUDIO_ACC_BIT			BIT(3) /*TypeC Audio Accessory  4/7*/
 
 #define TYPEC_SW_CTL_REG(base)		(base + 0x52)
 
@@ -121,6 +123,7 @@ struct qpnp_typec_chip {
 	struct dual_role_phy_desc	dr_desc;
 	struct delayed_work		role_reversal_check;
 	struct typec_wakeup_source	role_reversal_wakeup_source;
+	bool				audio_acc_mode;/*Add support for TypeC Audio Accessory  5/7*/
 };
 
 /* current mode */
@@ -551,19 +554,55 @@ static irqreturn_t dfp_detach_handler(int irq, void *_chip)
 	return IRQ_HANDLED;
 }
 
+/*Add support for TypeC Audio Accessory  6/7*/
 static irqreturn_t vbus_err_handler(int irq, void *_chip)
 {
 	int rc;
+	u8 reg, rt_reg;
 	struct qpnp_typec_chip *chip = _chip;
 
 	pr_debug("vbus_err triggered\n");
 
 	mutex_lock(&chip->typec_lock);
+/*
 	rc = qpnp_typec_handle_detach(chip);
 	if (rc)
 		pr_err("failed to handle VBUS_ERR rc==%d\n", rc);
+*/
+	rc = qpnp_typec_read(chip, &rt_reg,
+				INT_RT_STS_REG(chip->base), 1);
+	pr_err("read DFP status rt_reg =%0x\n", rt_reg);
+	if (rc) {
+		pr_err("failed to read RT status reg rc=%d\n", rc);
+		goto out;
+	}
+
+	rc = qpnp_typec_read(chip, &reg,
+				TYPEC_DFP_STATUS_REG(chip->base), 1);
+	pr_err("read DFP status reg =%0x\n", reg);
+	if (rc) {
+		pr_err("failed to read DFP status reg rc=%d\n", rc);
+		goto out;
+	}
+
+	/* If DFP_Ra_Ra and VBUS_ERR then Audio Accessory */
+	if ((reg & AUDIO_ACC_BIT) && (rt_reg & VBUS_ERR_BIT)) {
+		chip->typec_state = POWER_SUPPLY_TYPE_AUDIO_ACC;
+		chip->type_c_psy.type = POWER_SUPPLY_TYPE_AUDIO_ACC;
+		chip->current_ma = 0;
+		chip->audio_acc_mode = true;
+		/* TODO: update CC state if required by audio team */
+	} else if (chip->audio_acc_mode || (rt_reg & VBUS_ERR_BIT)) {
+		chip->audio_acc_mode = false;
+		rc = qpnp_typec_handle_detach(chip);
+		if (rc)
+			pr_err("failed to handle VBUS_ERR rc==%d\n", rc);
+	}
+
+out:
 
 	mutex_unlock(&chip->typec_lock);
+	power_supply_changed(&chip->type_c_psy);
 
 	return IRQ_HANDLED;
 }
@@ -626,6 +665,9 @@ static int qpnp_typec_determine_initial_status(struct qpnp_typec_chip *chip)
 	} else if (rt_reg & UFP_DETECT_BIT) {
 		/* we are in UFP state */
 		ufp_detect_handler(0, chip);
+	} else if (rt_reg & VBUS_ERR_BIT) {
+		/* we are in ACC state */
+		vbus_err_handler(0, chip);
 	}
 
 	return 0;
@@ -666,7 +708,7 @@ static int qpnp_typec_request_irqs(struct qpnp_typec_chip *chip)
 	REQUEST_IRQ(chip, chip->dfp_detect, "dfp-detect", dfp_detect_handler,
 			flags, true, rc);
 	REQUEST_IRQ(chip, chip->vbus_err, "vbus-err", vbus_err_handler,
-			flags, true, rc);
+			flags | IRQF_TRIGGER_FALLING, true, rc);/*TypeC Audio Accessory  7/7*/
 	REQUEST_IRQ(chip, chip->vconn_oc, "vconn-oc", vconn_oc_handler,
 			flags, true, rc);
 
