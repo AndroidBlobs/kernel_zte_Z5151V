@@ -446,7 +446,6 @@ static int skcipher_recvmsg(struct kiocb *unused, struct socket *sock,
 		char __user *from = iov->iov_base;
 
 		while (seglen) {
-
 			used = ctx->used;
 			if (!used) {
 				err = skcipher_wait_for_data(sk, flags);
@@ -469,6 +468,13 @@ static int skcipher_recvmsg(struct kiocb *unused, struct socket *sock,
 				goto free;
 			sgl = list_first_entry(&ctx->tsgl,
 						struct skcipher_sg_list, list);
+			sg = sgl->sg;
+
+			while (!sg->length)
+				sg++;
+
+			sgl = list_first_entry(&ctx->tsgl,
+					       struct skcipher_sg_list, list);
 			sg = sgl->sg;
 
 			while (!sg->length)
@@ -716,7 +722,6 @@ static int skcipher_accept_parent_nokey(void *private, struct sock *sk)
 	}
 
 	memset(ctx->iv, 0, crypto_ablkcipher_ivsize(skcipher));
-
 
 	INIT_LIST_HEAD(&ctx->tsgl);
 	ctx->len = len;
