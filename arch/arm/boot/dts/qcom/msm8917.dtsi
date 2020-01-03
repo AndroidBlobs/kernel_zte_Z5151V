@@ -83,7 +83,7 @@
 		other_ext_mem: other_ext_region@0 {
 			compatible = "removed-dma-pool";
 			no-map;
-			reg = <0x0 0x85b00000 0x0 0xd00000>;
+			reg = <0x0 0x84A00000 0x0 0x1E00000>;
 		};
 
 		modem_mem: modem_region@0 {
@@ -137,6 +137,13 @@
 		cont_splash_mem: splash_region@83000000 {
 			reg = <0x0 0x90000000 0x0 0x1400000>;
 		};
+
+		/*add by ZTE_BOOT*/
+		ramoops_men: ramoops_region@b0000000 {
+			compatible = "removed_ramoops_memory";
+			no-map;
+			reg = <0 0xb0000000 0 0x200000>;
+		};
 	};
 
 	soc: soc { };
@@ -156,6 +163,7 @@
 #include "msm8917-mdss.dtsi"
 #include "msm8917-mdss-pll.dtsi"
 #include "msm8917-vidc.dtsi"
+#include "msm8917-vendor.dtsi"
 
 &soc {
 	#address-cells = <1>;
@@ -466,9 +474,9 @@
 			qcom,low-threshold-uamp = <3400000>;
 			qcom,high-threshold-uamp = <4200000>;
 			qcom,mitigation-freq-khz = <1094400>;
-			qcom,vph-high-threshold-uv = <3500000>;
-			qcom,vph-low-threshold-uv = <3200000>;
-			qcom,soc-low-threshold = <10>;
+			qcom,vph-high-threshold-uv = <3200000>;
+			qcom,vph-low-threshold-uv = <3100000>;
+			qcom,soc-low-threshold = <0>;
 			qcom,thermal-handle = <&msm_thermal_freq>;
 		};
 	};

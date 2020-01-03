@@ -86,10 +86,6 @@
 		qcom,disable-device-mode;
 		qcom,gpio-mode-sel = <&tlmm 12 0>;
 	};
-
-	hbtp {
-		status = "disabled";
-	};
 };
 
 &int_codec {

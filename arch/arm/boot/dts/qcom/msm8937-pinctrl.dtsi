@@ -140,6 +140,36 @@
 			};
 		};
 
+		i2c_8 {
+			i2c_8_active: i2c_8_active {
+				/* active state */
+				mux {
+					pins = "gpio98", "gpio99";
+					function = "blsp_i2c8";
+				};
+
+				config {
+					pins = "gpio98", "gpio99";
+					drive-strength = <2>;
+					bias-disable;
+				};
+			};
+
+			i2c_8_sleep: i2c_8_sleep {
+				/* suspended state */
+				mux {
+					pins = "gpio98", "gpio99";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio98", "gpio99";
+					drive-strength = <2>;
+					bias-disable;
+				};
+			};
+		};
+
 		pmx_rd_nfc_int {
 			/*qcom,pins = <&gp 17>;*/
 			pins = "gpio17";
@@ -1185,7 +1215,7 @@
 				config {
 					pins = "gpio67";
 					drive-strength = <2>;
-					bias-pull-up;
+					bias-disable;
 				};
 			};
 
@@ -1405,7 +1435,30 @@
 				drive-strength = <2>; /* 2 MA */
 			};
 		};
-
+		cam_sensor_rear_vana: cam_sensor_rear_vana {
+					/* VDIG */
+					mux {
+						pins = "gpio132";
+						function = "gpio";
+					};
+					config {
+						pins = "gpio132";
+						bias-disable; /* No PULL */
+						drive-strength = <2>; /* 2 MA */
+					};
+				};
+		cam_sensor_rear_vana_sleep: cam_sensor_rear_vana_sleep {
+					/* VDIG */
+					mux {
+						pins = "gpio132";
+						function = "gpio";
+					};
+					config {
+						pins = "gpio132";
+						bias-disable; /* No PULL */
+						drive-strength = <2>; /* 2 MA */
+					};
+				};
 		cam_sensor_mclk1_default: cam_sensor_mclk1_default {
 			/* MCLK1 */
 			mux {
@@ -1463,6 +1516,33 @@
 				drive-strength = <2>; /* 2 MA */
 			};
 		};
+cam_sensor_backaux_default: cam_sensor_backaux_default {
+	/*VANA */
+	mux {
+		pins = "gpio99";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio99";
+		bias-disable; /* No PULL */
+		drive-strength = <2>; /* 2 MA */
+	};
+};
+
+cam_sensor_backaux_sleep: cam_sensor_backaux_sleep {
+	/* VANA */
+	mux {
+		pins = "gpio99";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio99";
+		bias-disable; /* No PULL */
+		drive-strength = <2>; /* 2 MA */
+	};
+};
 
 		cam_sensor_mclk2_default: cam_sensor_mclk2_default {
 			/* MCLK2 */

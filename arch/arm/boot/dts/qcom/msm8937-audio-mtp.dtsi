@@ -26,9 +26,11 @@
 };
 
 &wsa881x_i2c_f {
-	status = "okay";
+/*zte weiguohua delete the unused codec for hardware design*/
+	status = "disabled";
 };
 
 &wsa881x_i2c_45 {
-	status = "okay";
+/*zte weiguohua delete the unused codec for hardware design*/
+	status = "disabled";
 };

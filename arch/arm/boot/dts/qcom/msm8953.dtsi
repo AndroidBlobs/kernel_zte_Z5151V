@@ -126,6 +126,19 @@
 			alignment = <0 0x400000>;
 			size = <0 0x800000>;
 		};
+
+		/*add by ZTE_BOOT*/
+		ramoops_men: ramoops_region@b0000000 {
+			compatible = "removed_ramoops_memory";
+			no-map;
+			reg = <0 0xb0000000 0 0x200000>;
+		};
+
+		tz_mem: tz_region@0 {
+			compatible = "removed-dma-pool";
+			no-map;
+			reg = <0x0 0x92000000 0x0 0x1900000>;
+		};
 	};
 
 	aliases {
@@ -164,6 +177,7 @@
 #include "msm8953-iommu-domains.dtsi"
 #include "msm8953-vidc.dtsi"
 #include "msm8953-pm.dtsi"
+#include "msm8953-vendor.dtsi"
 
 &soc {
 	#address-cells = <1>;
@@ -573,9 +587,9 @@
 			qcom,low-threshold-uamp = <3400000>;
 			qcom,high-threshold-uamp = <4200000>;
 			qcom,mitigation-freq-khz = <1689600>;
-			qcom,vph-high-threshold-uv = <3500000>;
-			qcom,vph-low-threshold-uv = <3200000>;
-			qcom,soc-low-threshold = <10>;
+			qcom,vph-high-threshold-uv = <3200000>;
+			qcom,vph-low-threshold-uv = <3100000>;
+			qcom,soc-low-threshold = <0>;
 			qcom,thermal-handle = <&msm_thermal_freq>;
 		};
 	};
@@ -1671,9 +1685,9 @@
 		qcom,ce-opp-freq = <100000000>;
 	};
 
-	qcom_seecom: qseecom@85b00000 {
+	qcom_seecom: qseecom@92000000 {
 		compatible = "qcom,qseecom";
-		reg = <0x85b00000 0x800000>;
+		reg = <0x92000000 0x1900000>;
 		reg-names = "secapp-region";
 		qcom,hlos-num-ce-hw-instances = <1>;
 		qcom,hlos-ce-hw-instance = <0>;

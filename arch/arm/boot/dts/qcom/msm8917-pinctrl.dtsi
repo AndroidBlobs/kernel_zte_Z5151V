@@ -24,6 +24,21 @@
 #include "msm8917-camera-pinctrl.dtsi"
 
 		/* add pingrp for touchscreen */
+		pmx_ts_int_init {
+			ts_int_init: ts_int_init {
+				mux {
+					pins = "gpio65";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio65";
+					drive-strength = <2>;
+					bias-disable;
+				};
+			};
+		};
+
 		pmx_ts_int_active {
 			ts_int_active: ts_int_active {
 				mux {
@@ -54,6 +69,21 @@
 			};
 		};
 
+		pmx_ts_reset_init {
+			ts_reset_init: ts_reset_init {
+				mux {
+					pins = "gpio64";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio64";
+					drive-strength = <2>;
+					bias-disable;
+				};
+			};
+		};
+
 		pmx_ts_reset_active {
 			ts_reset_active: ts_reset_active {
 				mux {
@@ -64,6 +94,21 @@
 				config {
 					pins = "gpio64";
 					drive-strength = <8>;
+					bias-pull-up;
+				};
+			};
+		};
+
+		pmx_ts_reset_active_2mA {
+			ts_reset_active_2mA: ts_reset_active_2mA {
+				mux {
+					pins = "gpio64";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio64";
+					drive-strength = <2>;
 					bias-pull-up;
 				};
 			};
@@ -615,7 +660,7 @@
 				config {
 					pins = "gpio67";
 					drive-strength = <2>;
-					bias-pull-up;
+					bias-disable;
 				};
 			};
 
@@ -1368,6 +1413,24 @@
 			gpio_key_suspend: gpio_key_suspend {
 				mux {
 					pins = "gpio91", "gpio127", "gpio128";
+					drive-strength = <2>;
+					bias-pull-up;
+				};
+			};
+		};
+
+		tlmm_volume_key_8920 {
+			volume_key_active_8920: volume_key_active_8920 {
+				mux {
+					pins = "gpio91", "gpio128";
+					drive-strength = <2>;
+					bias-pull-up;
+				};
+			};
+
+			volume_key_suspend_8920: volume_key_suspend_8920 {
+				mux {
+					pins = "gpio91", "gpio128";
 					drive-strength = <2>;
 					bias-pull-up;
 				};

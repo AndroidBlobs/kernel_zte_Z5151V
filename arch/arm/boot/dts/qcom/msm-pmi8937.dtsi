@@ -175,19 +175,27 @@
 			#size-cells = <1>;
 
 			qcom,iterm-ma = <100>;
-			qcom,float-voltage-mv = <4200>;
+			qcom,float-voltage-mv = <4400>;
 			qcom,resume-delta-mv = <200>;
+			qcom,fastchg-current-comp = <700>;
+			qcom,float-voltage-comp-warm = <11>;
+			qcom,float-voltage-comp-cool = <0>;
+			qcom,float-voltage-comp = <0>;
+			qcom,bmd-pin-src = "bpd_thm";
 			qcom,chg-inhibit-fg;
 			qcom,rparasitic-uohm = <100000>;
 			qcom,bms-psy-name = "bms";
-			qcom,thermal-mitigation = <1500 700 600 0>;
+			qcom,thermal-mitigation = <1500 1000 700 0>;
 			qcom,parallel-usb-min-current-ma = <1400>;
 			qcom,parallel-usb-9v-min-current-ma = <900>;
 			qcom,parallel-allowed-lowering-ma = <500>;
 			qcom,pmic-revid = <&pmi8937_revid>;
 			qcom,force-aicl-rerun;
 			qcom,aicl-rerun-period-s = <180>;
-			qcom,autoadjust-vfloat;
+			qcom,vchg-adc-channel-id = <3>;
+			qcom,vchg_sns-vadc = <&pmi8937_vadc>;
+			qcom,dcin-vadc = <&pmi8937_vadc>;
+			/* qcom,autoadjust-vfloat; */ /*qcom suggest us to remove it */
 
 			qcom,chgr@1000 {
 				reg = <0x1000 0x100>;
@@ -289,7 +297,7 @@
 			compatible = "qcom,qpnp-fg";
 			#address-cells = <1>;
 			#size-cells = <1>;
-			qcom,resume-soc = <95>;
+			qcom,resume-soc = <99>;
 			status = "okay";
 			qcom,bcl-lm-threshold-ma = <127>;
 			qcom,bcl-mh-threshold-ma = <405>;
@@ -299,6 +307,10 @@
 			qcom,fg-cutoff-voltage-mv = <3500>;
 			qcom,cycle-counter-en;
 			qcom,capacity-learning-on;
+			qcom,hold-soc-while-full;
+			qcom,thermal-coefficients = [EC 85 75 4A FC 35];
+			qcom,fg-cc-cv-threshold-mv = <4390>;
+			qcom,cold-hot-jeita-hysteresis = <20 20 20 20>;
 
 			qcom,fg-soc@4000 {
 			status = "okay";

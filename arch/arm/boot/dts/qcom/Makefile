@@ -122,7 +122,8 @@ dtb-$(CONFIG_ARCH_MSM8996) += msm8996-v2-pmi8994-mtp.dtb \
 
 dtb-$(CONFIG_MSM_GVM_QUIN) += vplatform-lfv-msm8996.dtb
 
-dtb-$(CONFIG_ARCH_MSMCOBALT) += msmcobalt-sim.dtb \
+#dtb-$(CONFIG_ARCH_MSMCOBALT) += msmcobalt-sim.dtb \
+dtb-n += msmcobalt-sim.dtb \
 	msmcobalt-rumi.dtb \
 	msmcobalt-cdp.dtb \
 	msmcobalt-mtp.dtb \
@@ -173,7 +174,8 @@ dtb-$(CONFIG_ARCH_SDX20) += sdx20-emmc-cdp.dtb \
 	sdx20-v2-emmc-pcie-ep-mtp.dtb \
 	sdx20-v2-nand-pcie-ep-mtp.dtb
 
-dtb-$(CONFIG_ARCH_MSM8937) += msm8937-rumi.dtb \
+#dtb-$(CONFIG_ARCH_MSM8937) += msm8937-rumi.dtb \
+dtb-n += msm8937-rumi.dtb \
 	msm8937-pmi8950-cdp.dtb \
 	msm8937-pmi8937-cdp.dtb \
 	msm8937-pmi8940-cdp.dtb \
@@ -193,7 +195,8 @@ dtb-$(CONFIG_ARCH_MSM8937) += msm8937-rumi.dtb \
 	apq8037-pmi8950-mtp.dtb \
 	apq8037-pmi8937-mtp.dtb
 
-dtb-$(CONFIG_ARCH_MSM8917) += msm8917-rumi.dtb \
+#dtb-$(CONFIG_ARCH_MSM8917) += msm8917-rumi.dtb \
+dtb-n += msm8917-rumi.dtb \
 	apq8017-pmi8937-cdp.dtb \
 	apq8017-pmi8937-mtp.dtb \
 	apq8017-pmi8950-cdp.dtb \
@@ -210,12 +213,15 @@ dtb-$(CONFIG_ARCH_MSM8917) += msm8917-rumi.dtb \
 	msm8917-pmi8940-rcm.dtb \
 	msm8917-pmi8950-rcm.dtb \
 	msm8917-qgp-tmo.dtb \
-	msm8917-pmi8937-qrd-sku5.dtb \
-	apq8017-pmi8937-cdp-wcd-rome.dtb \
-	apq8017-pmi8950-cdp-wcd-rome.dtb \
-	apq8017-no-pmi-wcd-rome-cdp.dtb
+	msm8917-pmi8937-qrd-sku5.dtb
 
-dtb-$(CONFIG_ARCH_MSM8920) += msm8920-pmi8937-cdp.dtb \
+dtb-$(CONFIG_ARCH_MSM8917) += \
+	zte-msm8917-pmi8940-crinum.dtb \
+	zte-msm8917-pmi8940-smile8917.dtb \
+	zte-msm8917-pmi8940-ares.dtb
+
+#dtb-$(CONFIG_ARCH_MSM8920) += msm8920-pmi8937-cdp.dtb \
+dtb-n += msm8920-pmi8937-cdp.dtb \
 	msm8920-pmi8937-mtp.dtb \
 	msm8920-pmi8950-cdp.dtb \
 	msm8920-pmi8950-mtp.dtb \
@@ -224,7 +230,14 @@ dtb-$(CONFIG_ARCH_MSM8920) += msm8920-pmi8937-cdp.dtb \
 	msm8920-pmi8940-qrd-sku7.dtb \
 	msm8920-pmi8950-ext-codec-cdp.dtb
 
-dtb-$(CONFIG_ARCH_MSM8940) += msm8940-pmi8937-cdp.dtb \
+dtb-$(CONFIG_ARCH_MSM8920) += \
+	zte-msm8920-pmi8940-finsbury.dtb \
+	zte-msm8920-pmi8940-tesla.dtb \
+	zte-msm8920-pmi8940-zeus.dtb \
+	zte-msm8920-pmi8940-guldan.dtb
+
+#dtb-$(CONFIG_ARCH_MSM8940) += msm8940-pmi8937-cdp.dtb \
+dtb-n += msm8940-pmi8937-cdp.dtb \
 	msm8940-pmi8937-mtp.dtb \
 	msm8940-pmi8950-cdp.dtb \
 	msm8940-pmi8950-mtp.dtb \
@@ -238,7 +251,24 @@ dtb-$(CONFIG_ARCH_MSM8940) += msm8940-pmi8937-cdp.dtb \
 	msm8940-pmi8940-rcm.dtb \
 	msm8940-pmi8940-qrd-sku7.dtb
 
-dtb-$(CONFIG_ARCH_MSM8953) += msm8953-sim.dtb \
+dtb-$(CONFIG_ARCH_MSM8940) += \
+	zte-msm8940-pmi8940-spero.dtb \
+	zte-msm8940-pmi8940-smile.dtb \
+	zte-msm8940-pmi8950-coconut.dtb \
+	zte-msm8940-pmi8950-maxxl2.dtb \
+	zte-msm8940-pmi8950-daisy.dtb \
+	zte-msm8940-pmi8950-daphne.dtb
+
+ifeq ($(ENABLE_AB), true)
+	dtb-$(CONFIG_ARCH_MSM8940) += zte-msm8940-pmi8940-vita-enable_ab.dtb
+	dtb-$(CONFIG_ARCH_SDM450) += zte-sdm450-blaze-mtp-enable_ab.dtb
+else
+	dtb-$(CONFIG_ARCH_MSM8940) += zte-msm8940-pmi8940-vita.dtb
+	dtb-$(CONFIG_ARCH_SDM450) += zte-sdm450-blaze-mtp.dtb
+endif
+
+#dtb-$(CONFIG_ARCH_MSM8953) += msm8953-sim.dtb \
+dtb-n += msm8953-sim.dtb \
 	msm8953-rumi.dtb \
 	msm8953-cdp.dtb \
 	msm8953-mtp.dtb \
@@ -273,8 +303,11 @@ dtb-$(CONFIG_ARCH_SDM450) += sdm450-rcm.dtb \
 	sdm450-pmi8940-mtp.dtb \
 	sdm450-pmi8937-mtp.dtb \
 	sdm450-iot-mtp.dtb \
-	sda450-cdp.dtb \
-	sda450-mtp.dtb
+	zte-sdm450-kitty-mtp.dtb \
+	zte-sdm450-success-mtp.dtb \
+	zte-sdm450-yearn-mtp.dtb \
+	zte-sdm450-smart-mtp.dtb \
+	zte-sdm450-copper-mtp.dtb
 
 dtb-$(CONFIG_ARCH_MDM9607) += mdm9607-rumi.dtb \
 	mdm9607-cdp.dtb \
@@ -287,16 +320,17 @@ dtb-$(CONFIG_ARCH_MDM9607) += mdm9607-rumi.dtb \
 	mdm9206-mtp-sdcard.dtb \
 	mdm9206-rcm.dtb
 
-dtb-$(CONFIG_ARCH_MSM8916) += msm8952-qrd-skum.dtb \
+#dtb-$(CONFIG_ARCH_MSM8916) += msm8952-qrd-skum.dtb \
+dtb-n += msm8952-qrd-skum.dtb \
        msm8952-cdp.dtb \
        msm8952-ext-codec-cdp.dtb \
        msm8952-mtp.dtb
 
 dtb-$(CONFIG_ARCH_MSM8909) += msm8909-pm8916-mtp.dtb \
 	msm8909-cdp.dtb \
-        msm8909-1gb-qrd-skuc.dtb \
-        msm8909-1gb-qrd-skue.dtb \
-        msm8909-qrd-skue.dtb \
+	msm8909-1gb-qrd-skuc.dtb \
+	msm8909-1gb-qrd-skue.dtb \
+	msm8909-qrd-skue.dtb \
 	msm8909w-wtp.dtb \
 	apq8009w-wtp.dtb \
 	apq8009w-cdp.dtb \

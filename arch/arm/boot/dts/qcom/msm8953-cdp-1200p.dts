@@ -150,10 +150,6 @@
 	};
 };
 
-&soc {
-	/delete-node/ hbtp;
-};
-
 &modem_mem {
 	reg = <0x0 0x86c00000 0x0 0x1e00000>;
 };

@@ -29,8 +29,7 @@
 /{
 	mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
-		#include "batterydata-itech-3000mah.dtsi"
-		#include "batterydata-ascent-3450mAh.dtsi"
+		#include "batterydata-2530695_coslight_2770mAh.dtsi"
 	};
 };
 
@@ -40,8 +39,8 @@
 
 &pmi8940_charger {
 	qcom,battery-data = <&mtp_batterydata>;
-	qcom,chg-led-sw-controls;
-	qcom,chg-led-support;
+	/* qcom,chg-led-sw-controls; */
+	/* qcom,chg-led-support; */
 };
 
 &mdss_dsi0 {

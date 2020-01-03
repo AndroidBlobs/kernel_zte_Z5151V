@@ -12,7 +12,7 @@
  */
 
 #include "msm8937-pinctrl.dtsi"
-#include "msm8937-camera-sensor-mtp.dtsi"
+//#include "msm8937-camera-sensor-mtp.dtsi"
 
 &flash_led {
 	compatible = "qcom,qpnp-flash-led";
@@ -27,48 +27,77 @@
 	qcom,cons-sync-write-delay-us = <1000>;
 };
 
+&tlmm {
+		fp_shutdown_active:active{
+				mux{
+					pins = "gpio47";
+					function = "gpio";
+				};
+				config{
+					pins = "gpio47";
+					drive-strength = <6>;
+					output-high;
+					bias-disable = <0>;
+				};
+		};
+		fp_shutdown_suspend:suspend{
+				mux{
+					pins = "gpio47";
+					function = "gpio";
+				};
+				config{
+					pins = "gpio47";
+					drive-strength = <2>;
+					output-low;
+					bias-disable = <0>;
+				};
+		};
+		silead_irq_active:irq_active{
+				mux{
+					pins = "gpio48";
+					function = "gpio";
+				};
+				config{
+					pins = "gpio48";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
+		};
+		silead_pwr_active: silead_pwr_active {
+				mux{
+					pins = "gpio124";
+					function = "gpio";
+				};
+				config {
+					pins = "gpio124";
+					drive-strength = <2>;
+					bias-disable;
+					output-high;
+			};
+		};
+};
 &soc {
-	gpio_keys {
-		compatible = "gpio-keys";
-		input-name = "gpio-keys";
-		pinctrl-names = "tlmm_gpio_key_active","tlmm_gpio_key_suspend";
-		pinctrl-0 = <&gpio_key_active>;
-		pinctrl-1 = <&gpio_key_suspend>;
 
-		camera_focus {
-			label = "camera_focus";
-			gpios = <&tlmm 128 0x1>;
-			linux,input-type = <1>;
-			linux,code = <0x210>;
-			debounce-interval = <15>;
-		};
 
-		camera_snapshot {
-			label = "camera_snapshot";
-			gpios = <&tlmm 127 0x1>;
-			linux,input-type = <1>;
-			linux,code = <0x2fe>;
-			debounce-interval = <15>;
-		};
+	silead {
+		status = "ok";
+		reg = <0>;
+		compatible = "silead,silead_fp";
+		interrupt-parent = <&tlmm>;
+		interrupts = <48 0x0>;
 
-		vol_up {
-			label = "volume_up";
-			gpios = <&tlmm 91 0x1>;
-			linux,input-type = <1>;
-			linux,code = <115>;
-			debounce-interval = <15>;
-		};
-	};
+		pinctrl-names = "silead_active", "silead_suspend", "silead_irq", "pwr_active";
+		pinctrl-0 = <&fp_shutdown_active>;
+		pinctrl-1 = <&fp_shutdown_suspend>;
+		pinctrl-2 = <&silead_irq_active>;
+		pinctrl-3 = <&silead_pwr_active>;
 
-	hbtp {
-		compatible = "qcom,hbtp-input";
-		vcc_dig-supply = <&pm8937_l5>;
-		qcom,dig-load = <15000>;
-		qcom,dig-vtg-min = <1800000>;
-		qcom,dig-vtg-max = <1800000>;
+		silead,gpio_reset = <&tlmm 47 0>;
+		silead,gpio_irq = <&tlmm 48 0>;
+		silead,gpio_pwr = <&tlmm 124 0>;
+		interrupt-names = "sl_wake_up";
 	};
 };
-
 &blsp1_uart2 {
 	status = "ok";
 	pinctrl-names = "default";
@@ -177,7 +206,7 @@
 		1 &intc 0 221 0
 		2 &tlmm 67 0>;
 	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
-	cd-gpios = <&tlmm 67 0x1>;
+	cd-gpios = <&tlmm 67 0x0>;
 
 	qcom,clk-rates = <400000 20000000 25000000 50000000 100000000
 								200000000>;
