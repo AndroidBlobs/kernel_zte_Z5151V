@@ -30,6 +30,8 @@
 #include "lpm-levels.h"
 #endif
 #include <linux/workqueue.h>
+#include <linux/module.h>
+
 
 /**
  * struct alarm_base - Alarm timer bases
@@ -513,6 +515,32 @@ void alarm_init(struct alarm *alarm, enum alarmtimer_type type,
 }
 EXPORT_SYMBOL_GPL(alarm_init);
 
+
+
+
+/*zte_pm 20180409 begin */
+static int enable_timer_log = 0;
+module_param_named(
+	enable_timer_debug, enable_timer_log, int, S_IRUGO | S_IWUSR | S_IWGRP
+);
+
+void alarm_log_zte(struct alarm *alarm, long start, long interval, int abs_time)
+{
+	struct alarm_base *base = &alarm_bases[alarm->type];
+
+	if (abs_time) {
+		pr_info("ZTE_ALARM set alarm at %ld s(elapsed time), period %ld s at %lld s\n",
+			start, interval, (ktime_to_ms(base->gettime())/1000));
+	} else {
+		pr_info("ZTE_ALARM set alarm %ld s(elapsed time) later, period %ld s at %lld s\n",
+			start, interval, (ktime_to_ms(base->gettime())/1000));
+	}
+}
+EXPORT_SYMBOL_GPL(alarm_log_zte);
+/*zte_pm 20180409 end*/
+
+
+
 /**
  * alarm_start - Sets an absolute alarm to fire
  * @alarm: ptr to alarm to set
@@ -524,7 +552,16 @@ int alarm_start(struct alarm *alarm, ktime_t start)
 	unsigned long flags;
 	int ret;
 
+	ktime_t relative_expiry_time;
 	spin_lock_irqsave(&base->lock, flags);
+
+	/*zte_pm 20180409*/
+	relative_expiry_time = ktime_sub(start, base->gettime());
+	if (enable_timer_log != 0) {
+		pr_info("ZTE_ALARM set alarm %lld s later at %lld s in alarm_start...\n",
+			(ktime_to_ms(relative_expiry_time)/1000), (ktime_to_ms(base->gettime())/1000));
+	}
+
 	alarm->node.expires = start;
 	alarmtimer_enqueue(base, alarm);
 	ret = hrtimer_start(&alarm->timer, alarm->node.expires,
@@ -533,6 +570,7 @@ int alarm_start(struct alarm *alarm, ktime_t start)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(alarm_start);
+
 
 /**
  * alarm_start_relative - Sets a relative alarm to fire
