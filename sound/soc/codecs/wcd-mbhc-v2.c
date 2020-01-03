@@ -30,19 +30,33 @@
 #include "wcd-mbhc-v2.h"
 #include "wcdcal-hwdep.h"
 
+
+/*
+ * headset detect /proc/hs
+ */
+#include <linux/time.h>
+#include <asm/uaccess.h>
+#include <linux/proc_fs.h>
+
+#if defined(CONFIG_ZTE_USE_AMP_AW87316)
+extern int	aw_speaker_ampify_rtc_mode_get(void);
+#endif
+
+static int hs_type;
 #define WCD_MBHC_JACK_MASK (SND_JACK_HEADSET | SND_JACK_OC_HPHL | \
 			   SND_JACK_OC_HPHR | SND_JACK_LINEOUT | \
 			   SND_JACK_MECHANICAL | SND_JACK_MICROPHONE2 | \
 			   SND_JACK_UNSUPPORTED)
-
+/*zte weiguohua modify for make headset det stable,bgein 20171204*/
 #define WCD_MBHC_JACK_BUTTON_MASK (SND_JACK_BTN_0 | SND_JACK_BTN_1 | \
-				  SND_JACK_BTN_2 | SND_JACK_BTN_3 | \
-				  SND_JACK_BTN_4 | SND_JACK_BTN_5 | \
-				  SND_JACK_BTN_6 | SND_JACK_BTN_7)
+				  SND_JACK_BTN_2)
+/*zte weiguohua modify for make headset det stable,end 20171204*/
 #define OCP_ATTEMPT 1
 #define HS_DETECT_PLUG_TIME_MS (3 * 1000)
-#define SPECIAL_HS_DETECT_TIME_MS (2 * 1000)
-#define MBHC_BUTTON_PRESS_THRESHOLD_MIN 250
+/*ZTE_MODIFY by weiguohua modify for make headset det stable,bgein 20171204*/
+#define SPECIAL_HS_DETECT_TIME_MS (2 * 150)
+#define MBHC_BUTTON_PRESS_THRESHOLD_MIN 750
+/*ZTE_MODIFY by weiguohua modify for make headset det stable,end 20171204*/
 #define GND_MIC_SWAP_THRESHOLD 4
 #define WCD_FAKE_REMOVAL_MIN_PERIOD_MS 100
 #define HS_VREF_MIN_VAL 1400
@@ -67,9 +81,23 @@ enum wcd_mbhc_cs_mb_en_flag {
 	WCD_MBHC_EN_NONE,
 };
 
+/*add by yujianhua for headsetkey begin*/
+#ifdef CONFIG_ZTE_HEADSET_BUTTONKEY_CAL
+struct headsetkey_head headset_button;
+struct wcd_mbhc *mbhc_extern;
+extern int headsetkey_init_info_node(void);
+#endif
+/*add by yujianhua for headsetkey end*/
+
 static void wcd_mbhc_jack_report(struct wcd_mbhc *mbhc,
 				struct snd_soc_jack *jack, int status, int mask)
 {
+	/* ZTE_Audio_CJ,add log when press button or plug in headset*/
+	if (jack == &mbhc->headset_jack) {
+		pr_info("chenjun:%s:headset_jack status(%#X)\n", __func__, status);
+	} else if (jack == &mbhc->button_jack) {
+		pr_info("chenjun:%s:button_jack status(%#X)\n", __func__, status);
+	}
 	snd_soc_jack_report(jack, status, mask);
 }
 
@@ -130,6 +158,9 @@ static void wcd_program_btn_threshold(const struct wcd_mbhc *mbhc, bool micbias)
 	struct snd_soc_codec *codec = mbhc->codec;
 	struct snd_soc_card *card = codec->component.card;
 	s16 *btn_low, *btn_high;
+#ifdef CONFIG_ZTE_HEADSET_BUTTONKEY_CAL
+	int i = 0;/*add by yujianhua for headsetkey*/
+#endif
 
 	if (mbhc->mbhc_cfg->calibration == NULL) {
 		dev_err(card->dev, "%s: calibration data is NULL\n", __func__);
@@ -141,9 +172,77 @@ static void wcd_program_btn_threshold(const struct wcd_mbhc *mbhc, bool micbias)
 	btn_high = ((void *)&btn_det->_v_btn_low) +
 			(sizeof(btn_det->_v_btn_low[0]) * btn_det->num_btn);
 
+/*add by yujianhua for headsetkey begin*/
+#ifdef CONFIG_ZTE_HEADSET_BUTTONKEY_CAL
+	if (headset_button.use_keycalpara) {
+		for (i = 0; i < 5; i++) {
+			btn_low[i] = headset_button.btn_callow[i];
+			btn_high[i] = headset_button.btn_calhigh[i];
+		}
+	} else {
+		for (i = 0; i < 5; i++) {
+			headset_button.btn_callow[i] = btn_low[i];
+			headset_button.btn_calhigh[i] = btn_high[i];
+		}
+	}
+#endif
+/*add by yujianhua for headsetkey end*/
+
 	mbhc->mbhc_cb->set_btn_thr(codec, btn_low, btn_high, btn_det->num_btn,
 				   micbias);
 }
+
+/*add by yujianhua for headsetkey begin*/
+#ifdef CONFIG_ZTE_HEADSET_BUTTONKEY_CAL
+void headsetkey_set_btn_calpara(struct wcd_mbhc *mbhc, u16 btn_calkey_val)
+{
+	struct wcd_mbhc_btn_detect_cfg *btn_det;
+	struct snd_soc_codec *codec = mbhc->codec;
+	s16 *btn_low, *btn_high;
+	int i = 0;
+
+	btn_det = WCD_MBHC_CAL_BTN_DET_PTR(mbhc->mbhc_cfg->calibration);
+	btn_low = btn_det->_v_btn_low;
+	btn_high = ((void *)&btn_det->_v_btn_low) +
+			(sizeof(btn_det->_v_btn_low[0]) * btn_det->num_btn);
+
+	if (btn_calkey_val == 0xffff) {/*force update all para*/
+		for (i = 0; i < 5; i++) {
+			btn_low[i] = headset_button.btn_callow[i];
+			btn_high[i] = headset_button.btn_calhigh[i];
+		}
+	} else {/*cal headsetkey para*/
+		if (!headset_button.micbias2) {
+			btn_low[0] = btn_calkey_val;
+			btn_low[1] = btn_calkey_val + CALKEY_STEP;
+			btn_low[2] = btn_calkey_val + CALKEY_STEP*2;
+			btn_low[3] = MAX_KEYVAL-CALKEY_STEP;
+			btn_low[4] = MAX_KEYVAL;
+			if (headset_button.keynumber == HEADSETKEY_UP) {
+				btn_low[0] = headset_button.btn_callow[HEADSETKEY_MD];
+			} else if (headset_button.keynumber == HEADSETKEY_DN) {
+				btn_low[0] = headset_button.btn_callow[HEADSETKEY_MD];
+				btn_low[1] = headset_button.btn_callow[HEADSETKEY_UP];
+			}
+		} else {
+			btn_high[0] = btn_calkey_val;
+			btn_high[1] = btn_calkey_val + CALKEY_STEP;
+			btn_high[2] = btn_calkey_val + CALKEY_STEP*2;
+			btn_high[3] = MAX_KEYVAL-CALKEY_STEP;
+			btn_high[4] = MAX_KEYVAL;
+			if (headset_button.keynumber == HEADSETKEY_UP) {
+				btn_high[0] = headset_button.btn_calhigh[HEADSETKEY_MD];
+			} else if (headset_button.keynumber == HEADSETKEY_DN) {
+				btn_high[0] = headset_button.btn_calhigh[HEADSETKEY_MD];
+				btn_high[1] = headset_button.btn_calhigh[HEADSETKEY_UP];
+			}
+		}
+	}
+
+	mbhc->mbhc_cb->set_btn_thr(codec, btn_low, btn_high, btn_det->num_btn, headset_button.micbias2);
+}
+#endif
+/*add by yujianhua for headsetkey end*/
 
 static void wcd_enable_curr_micbias(const struct wcd_mbhc *mbhc,
 				const enum wcd_mbhc_cs_mb_en_flag cs_mb_en)
@@ -449,7 +548,11 @@ static void wcd_cancel_hs_detect_plug(struct wcd_mbhc *mbhc,
 	WCD_MBHC_RSC_LOCK(mbhc);
 }
 
+#if defined(CONFIG_ZTE_USE_AMP_AW87316)
+void wcd_mbhc_clr_and_turnon_hph_padac(struct wcd_mbhc *mbhc)
+#else
 static void wcd_mbhc_clr_and_turnon_hph_padac(struct wcd_mbhc *mbhc)
+#endif
 {
 	bool pa_turned_on = false;
 	u8 wg_time;
@@ -490,6 +593,28 @@ static bool wcd_mbhc_is_hph_pa_on(struct wcd_mbhc *mbhc)
 	return (hph_pa_on) ? true : false;
 }
 
+#if defined(CONFIG_ZTE_USE_AMP_AW87316)
+void wcd_mbhc_set_and_turnoff_hph_padac(struct wcd_mbhc *mbhc)
+{
+	u8 wg_time;
+
+	WCD_MBHC_REG_READ(WCD_MBHC_HPH_CNP_WG_TIME, wg_time);
+	wg_time += 1;
+	if (aw_speaker_ampify_rtc_mode_get() == 0) {
+		/* If headphone PA is on, check if userspace receives
+		* removal event to sync-up PA's state */
+		if (wcd_mbhc_is_hph_pa_on(mbhc)) {
+			pr_debug("%s PA is on, setting PA_OFF_ACK\n", __func__);
+			set_bit(WCD_MBHC_HPHL_PA_OFF_ACK, &mbhc->hph_pa_dac_state);
+			set_bit(WCD_MBHC_HPHR_PA_OFF_ACK, &mbhc->hph_pa_dac_state);
+		} else {
+			pr_debug("%s PA is off\n", __func__);
+		}
+		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HPH_PA_EN, 0);
+	}
+	usleep_range(wg_time * 1000, wg_time * 1000 + 50);
+}
+#else
 static void wcd_mbhc_set_and_turnoff_hph_padac(struct wcd_mbhc *mbhc)
 {
 	u8 wg_time;
@@ -510,6 +635,7 @@ static void wcd_mbhc_set_and_turnoff_hph_padac(struct wcd_mbhc *mbhc)
 	usleep_range(wg_time * 1000, wg_time * 1000 + 50);
 }
 
+#endif
 int wcd_mbhc_get_impedance(struct wcd_mbhc *mbhc, uint32_t *zl,
 			uint32_t *zr)
 {
@@ -558,7 +684,7 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
 
-	pr_debug("%s: enter insertion %d hph_status %x\n",
+	pr_info("%s: enter insertion %d hph_status %x\n",
 		 __func__, insertion, mbhc->hph_status);
 	if (!insertion) {
 		/* Report removal */
@@ -710,13 +836,14 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 
 		mbhc->hph_status |= jack_type;
 
-		pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
+		pr_info("%s: Reporting insertion %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
 		wcd_mbhc_jack_report(mbhc, &mbhc->headset_jack,
 				    (mbhc->hph_status | SND_JACK_MECHANICAL),
 				    WCD_MBHC_JACK_MASK);
 		wcd_mbhc_clr_and_turnon_hph_padac(mbhc);
 	}
+	hs_type = mbhc->current_plug;
 	pr_debug("%s: leave hph_status %x\n", __func__, mbhc->hph_status);
 }
 
@@ -811,8 +938,9 @@ static void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 {
 	bool anc_mic_found = false;
 	enum snd_jack_types jack_type;
+	struct snd_soc_codec *codec;
 
-	pr_debug("%s: enter current_plug(%d) new_plug(%d)\n",
+	pr_info("%s:enter current_plug(%d) new_plug(%d)\n",
 		 __func__, mbhc->current_plug, plug_type);
 
 	WCD_MBHC_RSC_ASSERT_LOCKED(mbhc);
@@ -821,7 +949,7 @@ static void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 		pr_debug("%s: cable already reported, exit\n", __func__);
 		goto exit;
 	}
-
+	codec = mbhc->codec;
 	if (plug_type == MBHC_PLUG_TYPE_HEADPHONE) {
 		/*
 		 * Nothing was reported previously
@@ -834,7 +962,25 @@ static void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 						SND_JACK_HEADPHONE);
 			if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET)
 				wcd_mbhc_report_plug(mbhc, 0, SND_JACK_HEADSET);
-		wcd_mbhc_report_plug(mbhc, 1, SND_JACK_UNSUPPORTED);
+		/*wcd_mbhc_report_plug(mbhc, 1, SND_JACK_UNSUPPORTED);*/
+		if (mbhc->impedance_detect) {
+				mbhc->mbhc_cb->compute_impedance(mbhc,
+						&mbhc->zl, &mbhc->zr);
+				pr_info("%s: test ----zl:%d,zr:%d\n", __func__, mbhc->zl, mbhc->zr);
+				if ((mbhc->zl > 20000) && (mbhc->zr > 20000)) {
+					pr_debug("%s: test ----special accessory\n", __func__);
+					/*Toggle switch back*/
+					if (mbhc->mbhc_cfg->swap_gnd_mic &&
+						mbhc->mbhc_cfg->swap_gnd_mic(codec)) {
+						pr_info("%s: ljl +++++US_EU gpio present,flip switch again\n"
+								, __func__);
+					}
+					wcd_mbhc_report_plug(mbhc, 1, SND_JACK_HEADSET);
+				} else {
+					pr_debug("%s: headset is SND_JACK_UNSUPPORTED ", __func__);
+					wcd_mbhc_report_plug(mbhc, 1, SND_JACK_UNSUPPORTED);
+				}
+			}
 	} else if (plug_type == MBHC_PLUG_TYPE_HEADSET) {
 		if (mbhc->mbhc_cfg->enable_anc_mic_detect)
 			anc_mic_found = wcd_mbhc_detect_anc_plug_type(mbhc);
@@ -928,14 +1074,14 @@ static int wcd_check_cross_conn(struct wcd_mbhc *mbhc)
 	WCD_MBHC_REG_READ(WCD_MBHC_HPHR_SCHMT_RESULT, hphr_sch_res);
 	if (!(hphl_sch_res || hphr_sch_res)) {
 		plug_type = MBHC_PLUG_TYPE_GND_MIC_SWAP;
-		pr_debug("%s: Cross connection identified\n", __func__);
+		pr_info("%s: Cross connection identified\n", __func__);
 	} else {
-		pr_debug("%s: No Cross connection found\n", __func__);
+		pr_info("%s: No Cross connection found\n", __func__);
 	}
 
 	/* Disable schmitt trigger and restore micbias */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_ELECT_SCHMT_ISRC, reg1);
-	pr_debug("%s: leave, plug type: %d\n", __func__,  plug_type);
+	pr_info("%s: leave, plug type: %d\n", __func__,  plug_type);
 
 	if (mbhc->mbhc_cb->hph_pull_down_ctrl) {
 		mbhc->mbhc_cb->hph_pull_down_ctrl(mbhc->codec, true);
@@ -1094,6 +1240,10 @@ static void wcd_enable_mbhc_supply(struct wcd_mbhc *mbhc,
 							WCD_MBHC_EN_CS);
 		} else if (plug_type == MBHC_PLUG_TYPE_HEADPHONE) {
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+		} else if (plug_type == MBHC_PLUG_TYPE_GND_MIC_SWAP) {
+			/*zte add this judge branch for selfstick begin*/
+			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
+			/*zte add this judge branch for selfstick end*/
 		} else {
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_NONE);
 		}
@@ -1408,6 +1558,12 @@ correct_plug_type:
 					__func__, plug_type);
 			plug_type = MBHC_PLUG_TYPE_HEADSET;
 			goto report;
+		} else {
+			/*ZTE_MODIFY by lijilou  for selfie stick 20171123 start*/
+			pr_info("%s: selfie stick found %d\n", __func__, plug_type);
+			plug_type = MBHC_PLUG_TYPE_HEADSET;
+			goto report;
+			/*ZTE_MODIFY by lijilou  for selfie stick 20171123 end*/
 		}
 	}
 
@@ -1512,7 +1668,7 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MECH_DETECTION_TYPE,
 				 !detection_type);
 
-	pr_debug("%s: mbhc->current_plug: %d detection_type: %d\n", __func__,
+	pr_info("%s: mbhc->current_plug: %d detection_type: %d\n", __func__,
 			mbhc->current_plug, detection_type);
 	wcd_cancel_hs_detect_plug(mbhc, &mbhc->correct_plug_swch);
 
@@ -1631,7 +1787,7 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 	int r = IRQ_HANDLED;
 	struct wcd_mbhc *mbhc = data;
 
-	pr_debug("%s: enter\n", __func__);
+	pr_info("%s: enter\n", __func__);
 	if (unlikely((mbhc->mbhc_cb->lock_sleep(mbhc, true)) == false)) {
 		pr_warn("%s: failed to hold suspend\n", __func__);
 		r = IRQ_NONE;
@@ -1650,6 +1806,12 @@ static int wcd_mbhc_get_button_mask(struct wcd_mbhc *mbhc)
 	int btn;
 
 	btn = mbhc->mbhc_cb->map_btn_code_to_num(mbhc->codec);
+	/*zte modify for delete voicecomand key begin*/
+	if (btn >= 3) {
+		pr_err("%s: enter:zte get btn value %d", __func__, btn);
+		return mask;
+	}
+	/*zte modify for delete voicecomand key end*/
 
 	switch (btn) {
 	case 0:
@@ -1679,7 +1841,9 @@ static int wcd_mbhc_get_button_mask(struct wcd_mbhc *mbhc)
 	default:
 		break;
 	}
-
+	/*zte modify for delete voicecomand key begin*/
+	pr_debug("%s: enter:zte get mask 0x%x", __func__, mask);
+	/*zte modify for delete voicecomand key end*/
 	return mask;
 }
 
@@ -1965,6 +2129,17 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 		goto done;
 	}
 	mbhc->buttons_pressed |= mask;
+
+	/*add by yujianhua for headsetkey begin*/
+#ifdef CONFIG_ZTE_HEADSET_BUTTONKEY_CAL
+	pr_info("%s: cal_presskey true cal_begin=%d\n", __func__, headset_button.cal_begin);
+	if (headset_button.cal_begin == true) {
+		headset_button.cal_presskeyok = true;
+		goto done;
+	}
+#endif
+	/*add by yujianhua for headsetkey end*/
+
 	mbhc->mbhc_cb->lock_sleep(mbhc, true);
 	if (schedule_delayed_work(&mbhc->mbhc_btn_dwork,
 				msecs_to_jiffies(400)) == 0) {
@@ -2008,6 +2183,29 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	}
 	if (mbhc->buttons_pressed & WCD_MBHC_JACK_BUTTON_MASK) {
 		ret = wcd_cancel_btn_work(mbhc);
+		/*add by yujianhua for headsetkey begin*/
+	#ifdef CONFIG_ZTE_HEADSET_BUTTONKEY_CAL
+		pr_info("%s: cal_releasekey true cal_begin=%d\n", __func__, headset_button.cal_begin);
+		if (headset_button.cal_begin == true) {
+			headset_button.cal_presskeyok = false;
+			mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK;
+			goto exit;
+		} else if (headset_button.cal_singlekey_ok) {
+			headset_button.cal_singlekey_ok = false;
+			pr_info("%s:cal_singlekey_ok Reporting btn press\n", __func__);
+			wcd_mbhc_jack_report(mbhc,
+					&mbhc->button_jack,
+					mbhc->buttons_pressed,
+					mbhc->buttons_pressed);
+			pr_info("%s:cal_singlekey_ok Reporting btn release\n", __func__);
+			wcd_mbhc_jack_report(mbhc,
+					&mbhc->button_jack,
+					0, mbhc->buttons_pressed);
+			mbhc->buttons_pressed &= ~WCD_MBHC_JACK_BUTTON_MASK;
+			goto exit;
+		}
+	#endif
+		/*add by yujianhua for headsetkey end*/
 		if (ret == 0) {
 			pr_debug("%s: Reporting long button release event\n",
 				 __func__);
@@ -2106,10 +2304,33 @@ static void wcd_mbhc_moisture_config(struct wcd_mbhc *mbhc)
 				mbhc->mbhc_cfg->moist_cfg.m_iref_ctl);
 }
 
+/*
+ * headset detect /proc/hs
+ */
+static ssize_t hs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+{
+	int ret = 0;
+	char buffer[32] = {0};
+
+	ret = scnprintf(buffer, 32, "%d\n", hs_type);
+
+	ret = simple_read_from_buffer(buf, count, pos, buffer, ret);
+
+	return ret;
+}
+
+static const struct file_operations hs_detect_ops = {
+	.owner    = THIS_MODULE,
+	.read     = hs_read,
+};
+
 static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 {
 	int ret = 0;
 	struct snd_soc_codec *codec = mbhc->codec;
+#ifdef CONFIG_ZTE_HEADSET_BUTTONKEY_CAL
+	mbhc_extern = mbhc;/*add by yujianhua for headsetkey*/
+#endif
 
 	pr_debug("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
@@ -2121,7 +2342,23 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_L_DET_PULL_UP_CTRL, 3);
 
 	wcd_mbhc_moisture_config(mbhc);
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	/*
+	 * For USB analog we need to override the switch configuration.
+	 * Also, disable hph_l pull-up current source as HS_DET_L is driven
+	 * by an external source
+	 */
+	if (mbhc->mbhc_cfg->enable_usbc_analog) {
+		mbhc->hphl_swh = 1;
+		mbhc->gnd_swh = 1;
 
+		if (mbhc->mbhc_cb->hph_pull_up_control)
+			mbhc->mbhc_cb->hph_pull_up_control(codec, I_OFF);
+		else
+			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_L_DET_PULL_UP_CTRL,
+						 0);
+	}
+#endif
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HPHL_PLUG_TYPE, mbhc->hphl_swh);
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_GND_PLUG_TYPE, mbhc->gnd_swh);
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_SW_HPH_LP_100K_TO_GND, 1);
@@ -2129,9 +2366,18 @@ static int wcd_mbhc_initialise(struct wcd_mbhc *mbhc)
 		mbhc->mbhc_cb->mbhc_gnd_det_ctrl(codec, true);
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_HS_L_DET_PULL_UP_COMP_CTRL, 1);
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_L_DET_EN, 1);
-
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	if (mbhc->mbhc_cfg->enable_usbc_analog) {
+		/* Insertion debounce set to 48ms */
+		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 4);
+	} else {
+		/* Insertion debounce set to 96ms */
+		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 6);
+	}
+#else
 	/* Insertion debounce set to 96ms */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_INSREM_DBNC, 6);
+#endif
 	/* Button Debounce set to 16ms */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_DBNC, 2);
 
@@ -2299,16 +2545,273 @@ int wcd_mbhc_set_keycode(struct wcd_mbhc *mbhc)
 		mbhc->is_btn_already_regd = true;
 	return result;
 }
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+static int wcd_mbhc_usb_c_analog_setup_gpios(struct wcd_mbhc *mbhc,
+					     bool active)
+{
+	int rc = 0;
+	struct usbc_ana_audio_config *config =
+		&mbhc->mbhc_cfg->usbc_analog_cfg;
+	union power_supply_propval pval;
 
+	dev_info(mbhc->codec->dev, "%s: setting GPIOs active = %d\n",
+		__func__, active);
+
+	memset(&pval, 0, sizeof(pval));
+
+	if (active) {
+		/*
+		pval.intval = POWER_SUPPLY_TYPEC_PR_SOURCE;
+		if (power_supply_set_property(mbhc->usb_psy,
+				POWER_SUPPLY_PROP_TYPEC_POWER_ROLE, &pval))
+			dev_info(mbhc->codec->dev, "%s: force PR_SOURCE mode unsuccessful\n",
+				 __func__);
+		else
+			mbhc->usbc_force_pr_mode = true;
+		*/
+		if (gpio_is_valid(config->usbc_en1_gpio)) {
+			dev_err(mbhc->codec->dev, "%s: setting usbc_en1_gpio to high\n",
+			__func__);
+			gpio_direction_output(config->usbc_en1_gpio, 1);
+		}
+		mbhc->usbc_mode = POWER_SUPPLY_TYPE_AUDIO_ACC;
+	} else {
+		if (gpio_is_valid(config->usbc_en1_gpio)) {
+			dev_err(mbhc->codec->dev, "%s: setting usbc_en1_gpio to low\n",
+				__func__);
+		   gpio_direction_output(config->usbc_en1_gpio, 0);
+		}
+		mbhc->usbc_mode = POWER_SUPPLY_TYPE_UNKNOWN;
+		/*
+		if (mbhc->mbhc_cfg->swap_gnd_mic)
+			mbhc->mbhc_cfg->swap_gnd_mic(mbhc->codec, false);
+		*/
+	}
+
+	return rc;
+}
+
+/* workqueue */
+static void wcd_mbhc_usbc_analog_work_fn(struct work_struct *work)
+{
+	struct wcd_mbhc *mbhc =
+		container_of(work, struct wcd_mbhc, usbc_analog_work);
+
+	wcd_mbhc_usb_c_analog_setup_gpios(mbhc,
+			mbhc->usbc_mode != POWER_SUPPLY_TYPE_UNKNOWN);
+}
+
+/* this callback function is used to process PMI notification */
+static int wcd_mbhc_usb_c_event_changed(struct notifier_block *nb,
+					unsigned long evt, void *ptr)
+{
+	int ret;
+	union power_supply_propval mode;
+	struct wcd_mbhc *mbhc = container_of(nb, struct wcd_mbhc, psy_nb);
+	struct snd_soc_codec *codec = mbhc->codec;
+
+	if (ptr != mbhc->usb_psy || evt != PSY_EVENT_PROP_CHANGED)
+		return 0;
+	ret = power_supply_get_property(mbhc->usb_psy,
+			POWER_SUPPLY_PROP_TYPE, &mode);
+	if (ret) {
+		dev_err(codec->dev, "%s: Unable to read USB TYPEC_MODE: %d\n",
+			__func__, ret);
+		return ret;
+	}
+	dev_dbg(codec->dev, "%s: USB change event received\n",
+		__func__);
+	dev_info(codec->dev, "%s: supply mode %d, expected %d\n", __func__,
+		mode.intval, POWER_SUPPLY_TYPEC_SINK_AUDIO_ADAPTER);
+
+	switch (mode.intval) {
+	case POWER_SUPPLY_TYPE_AUDIO_ACC:
+	case POWER_SUPPLY_TYPE_UNKNOWN:
+		dev_dbg(codec->dev, "%s: usbc_mode: %d; mode.intval: %d\n",
+		__func__, mbhc->usbc_mode, mode.intval);
+
+		if (mbhc->usbc_mode == mode.intval)
+			break; /* filter notifications received before */
+		mbhc->usbc_mode = mode.intval;
+
+		dev_dbg(codec->dev, "%s: queueing usbc_analog_work\n",
+			__func__);
+		schedule_work(&mbhc->usbc_analog_work);
+		break;
+	default:
+		break;
+	}
+	return ret;
+}
+
+/* PMI registration code */
+static int wcd_mbhc_usb_c_analog_init(struct wcd_mbhc *mbhc)
+{
+	int ret = 0;
+	struct snd_soc_codec *codec = mbhc->codec;
+
+	dev_dbg(mbhc->codec->dev, "%s: usb-c analog setup start\n", __func__);
+	INIT_WORK(&mbhc->usbc_analog_work, wcd_mbhc_usbc_analog_work_fn);
+
+	mbhc->usb_psy = power_supply_get_by_name("typec");
+	if (IS_ERR_OR_NULL(mbhc->usb_psy)) {
+		dev_err(codec->dev, "%s: could not get USB psy info\n",
+			__func__);
+		ret = -EPROBE_DEFER;
+		if (IS_ERR(mbhc->usb_psy))
+			ret = PTR_ERR(mbhc->usb_psy);
+		mbhc->usb_psy = NULL;
+		goto err;
+	}
+
+	ret = wcd_mbhc_usb_c_analog_setup_gpios(mbhc, false);
+	if (ret) {
+		dev_err(codec->dev, "%s: error while setting USBC ana gpios\n",
+			__func__);
+		goto err;
+	}
+
+	mbhc->psy_nb.notifier_call = wcd_mbhc_usb_c_event_changed;
+	mbhc->psy_nb.priority = 0;
+	ret = power_supply_reg_notifier(&mbhc->psy_nb);
+	if (ret) {
+		dev_err(codec->dev, "%s: power supply registration failed\n",
+			__func__);
+		goto err;
+	}
+
+	/*
+	 * as part of the init sequence check if there is a connected
+	 * USB C analog adapter
+	 */
+	dev_dbg(mbhc->codec->dev, "%s: verify if USB adapter is already inserted\n",
+		__func__);
+	ret = wcd_mbhc_usb_c_event_changed(&mbhc->psy_nb,
+					   PSY_EVENT_PROP_CHANGED,
+					   mbhc->usb_psy);
+
+err:
+	return ret;
+}
+
+static int wcd_mbhc_usb_c_analog_deinit(struct wcd_mbhc *mbhc)
+{
+	wcd_mbhc_usb_c_analog_setup_gpios(mbhc, false);
+
+	/* deregister from PMI */
+	power_supply_unreg_notifier(&mbhc->psy_nb);
+
+	return 0;
+}
+
+static int wcd_mbhc_init_gpio(struct wcd_mbhc *mbhc,
+			      struct wcd_mbhc_config *mbhc_cfg,
+			      const char *gpio_dt_str,
+			      int *gpio, struct device_node **gpio_dn)
+{
+	int rc = 0;
+	struct snd_soc_codec *codec = mbhc->codec;
+	struct snd_soc_card *card = codec->component.card;
+
+	dev_dbg(mbhc->codec->dev, "%s: gpio %s\n", __func__, gpio_dt_str);
+
+		*gpio = of_get_named_gpio(card->dev->of_node, gpio_dt_str, 0);
+		if (!gpio_is_valid(*gpio)) {
+			dev_err(card->dev, "%s, property %s not in node %s",
+				__func__, gpio_dt_str,
+				card->dev->of_node->full_name);
+			rc = -EINVAL;
+		}
+
+	return rc;
+}
+#endif
 int wcd_mbhc_start(struct wcd_mbhc *mbhc,
 		       struct wcd_mbhc_config *mbhc_cfg)
 {
 	int rc = 0;
-
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	struct usbc_ana_audio_config *config;
+	struct snd_soc_codec *codec;
+	struct snd_soc_card *card;
+	const char *usb_c_dt = "qcom,msm-mbhc-usbc-audio-supported";
+#endif
 	pr_debug("%s: enter\n", __func__);
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	if (!mbhc || !mbhc_cfg)
+		return -EINVAL;
+
+	config = &mbhc_cfg->usbc_analog_cfg;
+	codec = mbhc->codec;
+	card = codec->component.card;
+#endif
 	/* update the mbhc config */
 	mbhc->mbhc_cfg = mbhc_cfg;
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	dev_dbg(mbhc->codec->dev, "%s: enter\n", __func__);
+	/* check if USB C analog is defined on device tree */
+	mbhc_cfg->enable_usbc_analog = 0;
+	if (of_find_property(card->dev->of_node, usb_c_dt, NULL)) {
+		rc = of_property_read_u32(card->dev->of_node, usb_c_dt,
+				&mbhc_cfg->enable_usbc_analog);
+	}
+	if (mbhc_cfg->enable_usbc_analog == 0 || rc != 0) {
+		dev_info(card->dev,
+				"%s: %s in dt node is missing or false\n",
+				__func__, usb_c_dt);
+		dev_info(card->dev,
+			"%s: skipping USB c analog configuration\n", __func__);
+	}
 
+	/* initialize GPIOs */
+	if (mbhc_cfg->enable_usbc_analog) {
+		dev_dbg(mbhc->codec->dev, "%s: usbc analog enabled\n",
+				__func__);
+		/*
+		mbhc->swap_thr = GND_MIC_USBC_SWAP_THRESHOLD;
+		*/
+		rc = wcd_mbhc_init_gpio(mbhc, mbhc_cfg,
+				"qcom,usbc-analog-en1-gpio",
+				&config->usbc_en1_gpio,
+				&config->usbc_en1_gpio_p);
+		if (rc)
+			goto err;
+		rc = gpio_request(config->usbc_en1_gpio,
+				"ZTE_EN1_GPIO");
+		if (rc) {
+			/* GPIO to enable speaker mode exists, but failed request */
+			dev_err(mbhc->codec->dev, "%s: fail to request en1 gpio\n",
+				__func__);
+
+			goto err;
+		}
+
+		if (gpio_is_valid(config->usbc_en1_gpio)) {
+			dev_err(mbhc->codec->dev, "%s: success to request en1 gpio\n",
+				__func__);
+		   gpio_direction_output(config->usbc_en1_gpio, 0);
+		}
+		if (of_find_property(card->dev->of_node,
+				     "qcom,usbc-analog-force_detect_gpio",
+				     NULL)) {
+			rc = wcd_mbhc_init_gpio(mbhc, mbhc_cfg,
+					"qcom,usbc-analog-force_detect_gpio",
+					&config->usbc_force_gpio,
+					&config->usbc_force_gpio_p);
+			if (rc)
+				goto err;
+		}
+
+		dev_dbg(mbhc->codec->dev, "%s: calling usb_c_analog_init\n",
+			__func__);
+		/* init PMI notifier */
+		rc = wcd_mbhc_usb_c_analog_init(mbhc);
+		if (rc) {
+			rc = EPROBE_DEFER;
+			goto err;
+		}
+	}
+#endif
 	/* Set btn key code */
 	if ((!mbhc->is_btn_already_regd) && wcd_mbhc_set_keycode(mbhc))
 		pr_err("Set btn key code error!!!\n");
@@ -2325,13 +2828,39 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc,
 			pr_err("%s: Skipping to read mbhc fw, 0x%pK %pK\n",
 				 __func__, mbhc->mbhc_fw, mbhc->mbhc_cal);
 	}
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	return rc;
+err:
+	if (config->usbc_en1_gpio > 0) {
+		dev_dbg(card->dev, "%s free usb en1 gpio %d\n",
+			__func__, config->usbc_en1_gpio);
+		gpio_free(config->usbc_en1_gpio);
+		config->usbc_en1_gpio = 0;
+	}
+	if (config->usbc_force_gpio > 0) {
+		dev_dbg(card->dev, "%s free usb_force gpio %d\n",
+			__func__, config->usbc_force_gpio);
+		gpio_free(config->usbc_force_gpio);
+		config->usbc_force_gpio = 0;
+	}
+	if (config->usbc_en1_gpio_p)
+		of_node_put(config->usbc_en1_gpio_p);
+	if (config->usbc_force_gpio_p)
+		of_node_put(config->usbc_force_gpio_p);
 	pr_debug("%s: leave %d\n", __func__, rc);
 	return rc;
+#else
+	pr_debug("%s: leave %d\n", __func__, rc);
+	return rc;
+#endif
 }
 EXPORT_SYMBOL(wcd_mbhc_start);
 
 void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
 {
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	struct usbc_ana_audio_config *config = &mbhc->mbhc_cfg->usbc_analog_cfg;
+#endif
 	pr_debug("%s: enter\n", __func__);
 	if (mbhc->current_plug != MBHC_PLUG_TYPE_NONE) {
 		if (mbhc->mbhc_cb && mbhc->mbhc_cb->skip_imped_detect)
@@ -2354,6 +2883,21 @@ void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
 		mbhc->mbhc_fw = NULL;
 		mbhc->mbhc_cal = NULL;
 	}
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	if (mbhc->mbhc_cfg->enable_usbc_analog) {
+		wcd_mbhc_usb_c_analog_deinit(mbhc);
+		/* free GPIOs */
+		if (config->usbc_en1_gpio > 0)
+			gpio_free(config->usbc_en1_gpio);
+		if (config->usbc_force_gpio)
+			gpio_free(config->usbc_force_gpio);
+
+		if (config->usbc_en1_gpio_p)
+			of_node_put(config->usbc_en1_gpio_p);
+		if (config->usbc_force_gpio_p)
+			of_node_put(config->usbc_force_gpio_p);
+	}
+#endif
 	pr_debug("%s: leave\n", __func__);
 }
 EXPORT_SYMBOL(wcd_mbhc_stop);
@@ -2373,6 +2917,7 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 	int hph_swh = 0;
 	int gnd_swh = 0;
 	struct snd_soc_card *card = codec->component.card;
+	struct proc_dir_entry *proc_hs_type = NULL;
 	const char *hph_switch = "qcom,msm-mbhc-hphl-swh";
 	const char *gnd_switch = "qcom,msm-mbhc-gnd-swh";
 
@@ -2551,6 +3096,15 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 		       mbhc->intr_ids->hph_right_ocp);
 		goto err_hphr_ocp_irq;
 	}
+	proc_hs_type = proc_create("hs", S_IRUGO, NULL, &hs_detect_ops);
+	if (!proc_hs_type)
+		pr_err("%s: hs register failed\n", __func__);
+	else
+		pr_info("%s: hs register success\n", __func__);
+
+#ifdef CONFIG_ZTE_HEADSET_BUTTONKEY_CAL
+	headsetkey_init_info_node();/*add by yujianhua for headsetkey*/
+#endif
 
 	pr_debug("%s: leave ret %d\n", __func__, ret);
 	return ret;
@@ -2594,6 +3148,7 @@ void wcd_mbhc_deinit(struct wcd_mbhc *mbhc)
 	mbhc->mbhc_cb->free_irq(codec, mbhc->intr_ids->hph_right_ocp, mbhc);
 	if (mbhc->mbhc_cb && mbhc->mbhc_cb->register_notifier)
 		mbhc->mbhc_cb->register_notifier(codec, &mbhc->nblock, false);
+	remove_proc_entry("hs", NULL);
 	mutex_destroy(&mbhc->codec_resource_lock);
 }
 EXPORT_SYMBOL(wcd_mbhc_deinit);

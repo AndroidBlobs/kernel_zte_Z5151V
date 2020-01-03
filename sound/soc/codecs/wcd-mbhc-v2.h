@@ -14,6 +14,9 @@
 
 #include <linux/wait.h>
 #include <linux/stringify.h>
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+#include <linux/power_supply.h>
+#endif
 #include "wcdcal-hwdep.h"
 
 #define TOMBAK_MBHC_NC	0
@@ -241,7 +244,16 @@ struct wcd_mbhc_moisture_cfg {
 	enum mbhc_moisture_vref m_vref_ctl;
 	enum mbhc_hs_pullup_iref m_iref_ctl;
 };
-
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+struct usbc_ana_audio_config {
+	int usbc_en1_gpio;
+	int usbc_en2_gpio;
+	int usbc_force_gpio;
+	struct device_node *usbc_en1_gpio_p; /* used by pinctrl API */
+	struct device_node *usbc_en2_gpio_p; /* used by pinctrl API */
+	struct device_node *usbc_force_gpio_p; /* used by pinctrl API */
+};
+#endif
 struct wcd_mbhc_config {
 	bool read_fw_bin;
 	void *calibration;
@@ -256,6 +268,10 @@ struct wcd_mbhc_config {
 	int mbhc_micbias;
 	int anc_micbias;
 	bool enable_anc_mic_detect;
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	u32 enable_usbc_analog;
+	struct usbc_ana_audio_config usbc_analog_cfg;
+#endif
 };
 
 struct wcd_mbhc_intr {
@@ -428,6 +444,13 @@ struct wcd_mbhc {
 	struct mutex hphr_pa_lock;
 
 	unsigned long intr_status;
+#ifdef CONFIG_ZTE_FEATRUE_USB_TYPEC_HEADSET
+	bool usbc_force_pr_mode;
+	int usbc_mode;
+	struct notifier_block psy_nb;
+	struct power_supply *usb_psy;
+	struct work_struct usbc_analog_work;
+#endif
 };
 #define WCD_MBHC_CAL_SIZE(buttons, rload) ( \
 	sizeof(struct wcd_mbhc_general_cfg) + \
@@ -525,5 +548,29 @@ static inline void wcd_mbhc_deinit(struct wcd_mbhc *mbhc)
 {
 }
 #endif
+
+/*add by yujianhua for headsetkey begin*/
+#ifdef CONFIG_ZTE_HEADSET_BUTTONKEY_CAL
+#define MAX_KEYVAL 787
+#define CALKEY_STEP 25
+enum {
+	HEADSETKEY_MD,
+	HEADSETKEY_UP,
+	HEADSETKEY_DN,
+	HEADSETKEY_RESERVER,
+};
+struct headsetkey_head {
+	bool cal_begin;
+	bool use_keycalpara;
+	bool micbias2;
+	bool cal_presskeyok;
+	bool cal_singlekey_ok;
+	u8 keynumber;
+	bool cal_press_key[3];
+	u16 btn_callow[5];
+	u16 btn_calhigh[5];
+};
+#endif
+/*add by yujianhua for headsetkey end*/
 
 #endif /* __WCD_MBHC_V2_H__ */

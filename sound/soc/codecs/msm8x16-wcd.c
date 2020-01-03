@@ -313,7 +313,10 @@ struct msm8x16_wcd_spmi msm8x16_wcd_modules[MAX_MSM8X16_WCD_DEVICE];
 static void *adsp_state_notifier;
 
 static struct snd_soc_codec *registered_codec;
-
+#if defined(CONFIG_ZTE_USE_AMP_AW87316)
+extern void wcd_mbhc_clr_and_turnon_hph_padac(struct wcd_mbhc *mbhc);
+extern void wcd_mbhc_set_and_turnoff_hph_padac(struct wcd_mbhc *mbhc);
+#endif
 static int get_codec_version(struct msm8x16_wcd_priv *msm8x16_wcd)
 {
 	if (msm8x16_wcd->codec_version == DIANGU)
@@ -2565,7 +2568,11 @@ static const struct soc_enum msm8x16_wcd_hph_mode_ctl_enum[] = {
 static const char * const cf_text[] = {
 	"MIN_3DB_4Hz", "MIN_3DB_75Hz", "MIN_3DB_150Hz"
 };
-
+/*add for pmic bargin solution by wjx 2018.2.9 begin*/
+static const char * const rx_text[] = {
+	"None", "RX_MIX2", "RX_MIX3", "RX_MIX23", "RX_MIX1", "RX_MIX12"
+};
+/*add for pmic bargin solution by wjx 2018.2.9 end*/
 static const struct soc_enum cf_dec1_enum =
 	SOC_ENUM_SINGLE(MSM8X16_WCD_A_CDC_TX1_MUX_CTL, 4, 3, cf_text);
 
@@ -2580,7 +2587,10 @@ static const struct soc_enum cf_rxmix2_enum =
 
 static const struct soc_enum cf_rxmix3_enum =
 	SOC_ENUM_SINGLE(MSM8X16_WCD_A_CDC_RX3_B4_CTL, 0, 3, cf_text);
-
+/*add for pmic bargin solution by wjx 2018.2.9 begin*/
+static const struct soc_enum rx_mix_enum =
+	SOC_ENUM_SINGLE(MSM8X16_WCD_A_CDC_CONN_TX_I2S_SD1_CTL, 0, 6, rx_text);
+/*add for pmic bargin solution by wjx 2018.2.9 end*/
 static const struct snd_kcontrol_new msm8x16_wcd_snd_controls[] = {
 
 	SOC_ENUM_EXT("RX HPH Mode", msm8x16_wcd_hph_mode_ctl_enum[0],
@@ -2662,6 +2672,9 @@ static const struct snd_kcontrol_new msm8x16_wcd_snd_controls[] = {
 	SOC_ENUM("RX1 HPF cut off", cf_rxmix1_enum),
 	SOC_ENUM("RX2 HPF cut off", cf_rxmix2_enum),
 	SOC_ENUM("RX3 HPF cut off", cf_rxmix3_enum),
+	/*add for pmic bargin solution by wjx 2018.2.9 begin*/
+	SOC_ENUM("I2S_TX1_CH_INP_SEL", rx_mix_enum),
+	/*add for pmic bargin solution by wjx 2018.2.9 end*/
 
 	SOC_SINGLE_EXT("IIR1 Enable Band1", IIR1, BAND1, 1, 0,
 	msm8x16_wcd_get_iir_enable_audio_mixer,
@@ -4237,6 +4250,11 @@ static int msm8x16_wcd_lo_dac_event(struct snd_soc_dapm_widget *w,
 			MSM8X16_WCD_A_ANALOG_RX_LO_DAC_CTL, 0x08, 0x08);
 		snd_soc_update_bits(codec,
 			MSM8X16_WCD_A_ANALOG_RX_LO_DAC_CTL, 0x40, 0x40);
+		/*modify by wjx for solve "lineout + aw87xxx" speaker sound loudness not stable issue begin 20180413*/
+		#if defined(CONFIG_ZTE_USE_SDM450_LINEOUT_AMP_AW87318)
+		msleep(20);
+		#endif
+		/*modify by wjx for solve "lineout + aw87xxx" speaker sound loudness not stable issue end 20180413*/
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		snd_soc_update_bits(codec,
@@ -4462,6 +4480,7 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"LINEOUT PA", NULL, "LINE_OUT"},
 	{"LINE_OUT", "Switch", "LINEOUT DAC"},
 	{"LINEOUT DAC", NULL, "RX3 CHAIN"},
+	{"Ext Spk Switch", "On", "LINEOUT"},
 
 	/* lineout to WSA */
 	{"WSA_SPK OUT", NULL, "LINEOUT PA"},
@@ -4951,6 +4970,9 @@ static int msm8x16_wcd_codec_enable_spk_ext_pa(struct snd_soc_dapm_widget *w,
 	case SND_SOC_DAPM_POST_PMU:
 		dev_dbg(w->codec->dev,
 			"%s: enable external speaker PA\n", __func__);
+#if defined(CONFIG_ZTE_USE_AMP_AW87316)
+		wcd_mbhc_clr_and_turnon_hph_padac(&msm8x16_wcd->mbhc);
+#endif
 		if (msm8x16_wcd->codec_spk_ext_pa_cb)
 			msm8x16_wcd->codec_spk_ext_pa_cb(codec, 1);
 		break;
@@ -4959,6 +4981,11 @@ static int msm8x16_wcd_codec_enable_spk_ext_pa(struct snd_soc_dapm_widget *w,
 			"%s: enable external speaker PA\n", __func__);
 		if (msm8x16_wcd->codec_spk_ext_pa_cb)
 			msm8x16_wcd->codec_spk_ext_pa_cb(codec, 0);
+#if defined(CONFIG_ZTE_USE_AMP_AW87316)
+	if ((&msm8x16_wcd->mbhc)->current_plug == MBHC_PLUG_TYPE_NONE) {
+		wcd_mbhc_set_and_turnoff_hph_padac(&msm8x16_wcd->mbhc);
+	}
+#endif
 		break;
 	}
 	return 0;
