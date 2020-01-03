@@ -407,6 +407,12 @@ sg_read(struct file *filp, char __user *buf, size_t count, loff_t * ppos)
 	struct sg_header *old_hdr = NULL;
 	int retval = 0;
 
+	if (unlikely(segment_eq(get_fs(), KERNEL_DS)))
+		return -EINVAL;
+
+	if (unlikely(segment_eq(get_fs(), KERNEL_DS)))
+		return -EINVAL;
+
 	if ((!(sfp = (Sg_fd *) filp->private_data)) || (!(sdp = sfp->parentdp)))
 		return -ENXIO;
 	SCSI_LOG_TIMEOUT(3, sg_printk(KERN_INFO, sdp,
@@ -924,9 +930,10 @@ sg_ioctl(struct file *filp, unsigned int cmd_in, unsigned long arg)
 			sfp->low_dma = 1;
 			if ((0 == sfp->low_dma) && !sfp->res_in_use) {
 				val = (int) sfp->reserve.bufflen;
+ 				mutex_lock(&sfp->parentdp->open_rel_lock);
 				sg_remove_scat(sfp, &sfp->reserve);
 				sg_build_reserve(sfp, val);
-				mutex_unlock(&sfp->parentdp->open_rel_lock);
+ 				mutex_unlock(&sfp->parentdp->open_rel_lock);
 			}
 		} else {
 			if (atomic_read(&sdp->detaching))
@@ -995,7 +1002,7 @@ sg_ioctl(struct file *filp, unsigned int cmd_in, unsigned long arg)
 		if (result)
 			return result;
 		if (val < 0)
-			return -EINVAL;
+                        return -EINVAL;
 		val = min_t(int, val,
 			    max_sectors_bytes(sdp->device->request_queue));
 		mutex_lock(&sfp->f_mutex);
@@ -1005,7 +1012,7 @@ sg_ioctl(struct file *filp, unsigned int cmd_in, unsigned long arg)
 				mutex_unlock(&sfp->f_mutex);
 				return -EBUSY;
 			}
-
+			mutex_lock(&sfp->parentdp->open_rel_lock);
 			sg_remove_scat(sfp, &sfp->reserve);
 			sg_build_reserve(sfp, val);
 			mutex_unlock(&sfp->parentdp->open_rel_lock);
