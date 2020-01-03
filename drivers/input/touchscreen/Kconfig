@@ -13,6 +13,8 @@ if INPUT_TOUCHSCREEN
 
 source "drivers/input/touchscreen/synaptics_dsx/Kconfig"
 source "drivers/input/touchscreen/synaptics_dsx_2.6/Kconfig"
+source "drivers/input/touchscreen/zte_synaptics_dsx_2.6/Kconfig"
+source "drivers/input/touchscreen/novatek_touch/Kconfig"
 
 config OF_TOUCHSCREEN
 	def_tristate INPUT
@@ -1136,6 +1138,37 @@ config TOUCHSCREEN_MAXIM_STI
 	  module will be called maxim_sti.
 
 source "drivers/input/touchscreen/gt9xx/Kconfig"
+config TS_FIRMWARE
+	string "config board firmware folder"
+config TOUCHSCREEN_FTS_TP_TEST
+	tristate "focaltech touchscreens"
+	depends on I2C
+	help
+	Say Y here if you have a fts touchscreen.
+
+	If unsure, say N.
+
+	To compile this driver as a module, choose M here: the
+	module will be called focaltech_ts.
+config TOUCHSCREEN_MSTAR_DRV_V5_7
+	tristate "Mstar touchscreens"
+	depends on I2C
+	help
+	  Say Y here if you have a Mstar touchscreen.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called Mstar touchscreens.
+source "drivers/input/touchscreen/focaltech_touch/Kconfig"
+source "drivers/input/touchscreen/focaltech_touch_V2_1/Kconfig"
+source "drivers/input/touchscreen/synaptics_zte_2.7/Kconfig"
+
+source "drivers/input/touchscreen/zte_gt1151/Kconfig"
+
+source "drivers/input/touchscreen/HiMax83102/Kconfig"
+
+source "drivers/input/touchscreen/ipio_touch_driver/Kconfig"
 
 config TOUCHSCREEN_HIMAX_CHIPSET
 	bool "Himax touchpanel CHIPSET"
@@ -1146,7 +1179,23 @@ config TOUCHSCREEN_HIMAX_CHIPSET
 	  report 10 touches at a time.
 
           If unsure, say N.
-
 source "drivers/input/touchscreen/hxchipset/Kconfig"
 
+config TOUCHSCREEN_HIMAX_CHIPSET_HX83102
+	bool "Himax touchpanel HX83102"
+	depends on I2C
+	help
+	  Say Y here if you have a Himax CHIPSET HX83102 touchscreen.
+	  HIMAX controllers are multi touch controllers which can
+	  report 10 touches at a time.
+
+          If unsure, say N.
+
+config TP_COMMON_INTERFACE
+	bool "Open TP common interface"
+	depends on I2C
+	help
+	  Say Y here if you want to use TP common interface.
+
+	  If unsure, say N.
 endif
