@@ -1831,7 +1831,7 @@ static void __move_free_nid(struct f2fs_sb_info *sbi, struct free_nid *i,
 		list_add_tail(&i->list, &nm_i->free_nid_list);
 		break;
 	default:
-		BUG_ON(1);
+		WARN_ON(1);
 	}
 }
 
