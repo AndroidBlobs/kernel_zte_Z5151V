@@ -150,6 +150,11 @@ struct msm_camera_sensor_board_info {
 	const char *actuator_name;
 	const char *flash_name;
 	const char *ois_name;
+	const char **sensor_module_name;
+	const char **chromtix_lib_name;
+	const char *default_chromtix_lib_name;
+	uint32_t *eeprom_checksum;
+	uint32_t *eeprom_valid_flag;
 	struct msm_camera_slave_info *slave_info;
 	struct msm_camera_csi_lane_params *csi_lane_params;
 	struct msm_camera_sensor_strobe_flash_data *strobe_flash_data;

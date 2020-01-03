@@ -44,6 +44,13 @@ enum ssctl_ssr_event_enum_type {
 	SSCTL_SSR_EVENT_AFTER_POWERUP = 1,
 	SSCTL_SSR_EVENT_BEFORE_SHUTDOWN = 2,
 	SSCTL_SSR_EVENT_AFTER_SHUTDOWN = 3,
+	/* added by zte_fangjun for color_led,start */
+	SSCTL_SSR_EVENT_LEDS_SET_GPIO,
+	SSCTL_SSR_EVENT_LEDS_SET_RED_BRIGHTNESS,
+	SSCTL_SSR_EVENT_LEDS_SET_RED_BLINK,
+	SSCTL_SSR_EVENT_LEDS_SET_GREEN_BRIGHTNESS,
+	SSCTL_SSR_EVENT_LEDS_SET_GREEN_BLINK,
+	/* added by zte_fangjun for color_led,end */
 	SSCTL_SSR_EVENT_ENUM_TYPE_MAX_ENUM_VAL = 2147483647
 };
 
@@ -72,6 +79,7 @@ extern int sysmon_send_shutdown(struct subsys_desc *dest_desc);
 extern int sysmon_send_shutdown_no_qmi(struct subsys_desc *dest_desc);
 extern int sysmon_notifier_register(struct subsys_desc *desc);
 extern void sysmon_notifier_unregister(struct subsys_desc *desc);
+int sysmon_send_led_cmd(enum ssctl_ssr_event_enum_type event, const char *tx_buf);
 #else
 static inline int sysmon_send_event(struct subsys_desc *dest_desc,
 					struct subsys_desc *event_desc,

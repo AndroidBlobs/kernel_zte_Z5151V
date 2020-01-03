@@ -271,6 +271,10 @@ struct msm_flash_cfg_data_t32 {
 #define VIDIOC_MSM_FLASH_CFG32 \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 13, struct msm_flash_cfg_data_t32)
 
+/* Add get flash  chip id  by lijianjun*/
+#define VIDIOC_MSM_FLASH_CFG_GETID32 \
+			_IOWR('V', BASE_VIDIOC_PRIVATE + 13, int16_t)
+/*Add End*/
 #define VIDIOC_MSM_IR_LED_CFG32 \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 14, struct msm_ir_led_cfg_data_t32)
 

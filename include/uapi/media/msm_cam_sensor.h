@@ -595,6 +595,11 @@ struct sensor_init_cfg_data {
 #define VIDIOC_MSM_FLASH_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 13, struct msm_flash_cfg_data_t)
 
+/* Add get flash  chip id  by lijianjun*/
+#define VIDIOC_MSM_FLASH_CFG_GETID \
+		_IOWR('V', BASE_VIDIOC_PRIVATE + 13, int16_t)
+/*Add end*/
+
 #define VIDIOC_MSM_OIS_CFG_DOWNLOAD \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 14, struct msm_ois_cfg_download_data)
 
