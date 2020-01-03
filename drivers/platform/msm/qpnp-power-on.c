@@ -29,6 +29,8 @@
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
 #include <linux/qpnp/power-on.h>
+#include <linux/reboot.h>
+#include <soc/qcom/socinfo.h>
 
 #define CREATE_MASK(NUM_BITS, POS) \
 	((unsigned char) (((1 << (NUM_BITS)) - 1) << (POS)))
@@ -226,7 +228,61 @@ struct qpnp_pon {
 	bool			store_hard_reset_reason;
 	bool			kpdpwr_dbc_enable;
 	ktime_t			kpdpwr_last_release_time;
+	struct timer_list timer;
+	struct work_struct pwrkey_poweroff_work;
+	struct work_struct pwrkey_release_work;
+	struct delayed_work check_pwrkey_work;
 };
+
+#define POWER_KEY_CHECK_MS 1000
+extern int socinfo_get_ftm_flag(void);
+
+static void pwrkey_timer(unsigned long data)
+{
+	struct qpnp_pon *pon = (struct qpnp_pon *)data;
+
+	schedule_work(&pon->pwrkey_poweroff_work);
+}
+
+static void pwrkey_poweroff(struct work_struct *work)
+{
+	pr_info("%s: power key long pressed, trigger reboot\n", __func__);
+	kernel_restart("LONGPRESS");
+}
+
+static void pwrkey_release(struct work_struct *work)
+{
+	struct qpnp_pon *pon = container_of(work,
+				struct qpnp_pon, pwrkey_release_work);
+
+	cancel_delayed_work_sync(&pon->check_pwrkey_work);
+}
+
+static void check_pwrkey(struct work_struct *work)
+{
+	u8 pon_rt_sts = 0;
+	int rc = 0;
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct qpnp_pon *pon = container_of(dwork,
+				struct qpnp_pon, check_pwrkey_work);
+
+	rc = spmi_ext_register_readl(pon->spmi->ctrl, pon->spmi->sid,
+			QPNP_PON_RT_STS(pon), &pon_rt_sts, 1);
+	if (rc) {
+		pr_err("%s, Unable to read PON RT status\n", __func__);
+		del_timer(&pon->timer);
+		return;
+	}
+	if (pon_rt_sts & QPNP_PON_KPDPWR_N_SET) {
+		schedule_delayed_work(&pon->check_pwrkey_work,
+				  round_jiffies_relative(msecs_to_jiffies
+							 (POWER_KEY_CHECK_MS)));
+		pr_emerg("%s, power key not released, check it again\n", __func__);
+	} else {
+		del_timer(&pon->timer);
+		pr_emerg("%s, power key not pressed, delete timer of power key\n", __func__);
+	}
+}
 
 static struct qpnp_pon *sys_reset_dev;
 static DEFINE_SPINLOCK(spon_list_slock);
@@ -306,6 +362,26 @@ static const char * const qpnp_poff_reason[] = {
 static int warm_boot;
 module_param(warm_boot, int, 0);
 
+#ifdef CONFIG_ENABLE_POWER_REASON_NODE
+static int
+qpnp_pon_masked_read(struct qpnp_pon *pon, u16 addr)
+{
+	int rc;
+	u8 reg;
+
+	rc = spmi_ext_register_readl(pon->spmi->ctrl, pon->spmi->sid,
+							addr, &reg, 1);
+	if (rc) {
+		dev_err(&pon->spmi->dev,
+			"Unable to read from addr=%hx, rc(%d)\n",
+			addr, rc);
+		return rc;
+	}
+
+	return reg;
+}
+#endif
+
 static int
 qpnp_pon_masked_write(struct qpnp_pon *pon, u16 addr, u8 mask, u8 val)
 {
@@ -343,6 +419,38 @@ static bool is_pon_gen2(struct qpnp_pon *pon)
 			pon->subtype == PON_GEN2_SECONDARY;
 }
 
+/**
+ * qpnp_pon_read_restart_reason - Store device restart reason in PMIC register.
+ *
+ * Returns = 0 if PMIC feature is not available or read restart reason
+ * successfully.
+ * Returns > 0 for errors
+ *
+ * This function is used to read device restart reason in PMIC register.
+ * It checks here to see if the restart reason register has been specified.
+ * If it hasn't, this function should immediately return 0
+ */
+#ifdef CONFIG_ENABLE_POWER_REASON_NODE
+int qpnp_pon_read_restart_reason(void)
+{
+	int rc = 0;
+	struct qpnp_pon *pon = sys_reset_dev;
+
+	if (!pon)
+		return 0;
+
+	if (!pon->store_hard_reset_reason)
+		return 0;
+
+	rc = qpnp_pon_masked_read(pon, QPNP_PON_SOFT_RB_SPARE(pon));
+	if (rc)
+		dev_err(&pon->spmi->dev,
+				"qpnp pon read to addr=%x, rc(%d)\n",
+				QPNP_PON_SOFT_RB_SPARE(pon), rc);
+	return rc;
+}
+EXPORT_SYMBOL(qpnp_pon_read_restart_reason);
+#endif
 /**
  * qpnp_pon_set_restart_reason - Store device restart reason in PMIC register.
  *
@@ -868,20 +976,56 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 	return 0;
 }
 
+/* ============== pwrkey crash ========================== */
+static int pwrkey_crash = 0;
+module_param(pwrkey_crash, int, 0644);
+extern int boot_mode_is_charger(void);
 static irqreturn_t qpnp_kpdpwr_irq(int irq, void *_pon)
 {
 	int rc;
 	struct qpnp_pon *pon = _pon;
+	u8 pon_rt_sts = 0;
 
 	rc = qpnp_pon_input_dispatch(pon, PON_KPDPWR);
 	if (rc)
 		dev_err(&pon->spmi->dev, "Unable to send input event\n");
 
+	rc = spmi_ext_register_readl(pon->spmi->ctrl, pon->spmi->sid,
+				QPNP_PON_RT_STS(pon), &pon_rt_sts, 1);
+	if (pon_rt_sts & QPNP_PON_KPDPWR_N_SET) {
+		if (socinfo_get_ftm_flag() == 1 || socinfo_get_charger_flag() == 1) {
+			pon->timer.expires = jiffies + 3 * HZ;
+			pr_info("%s: FTM mode,start 3s timer for reboot\n", __func__);
+		} else {
+#ifdef CONFIG_ZTE_PWRKEY_16S_RESET
+			pon->timer.expires = jiffies + 16 * HZ;
+			pr_info("%s: Normal mode,start 16s timer for reboot\n", __func__);
+#elif defined(CONFIG_ZTE_PWRKEY_HARDRESET_TIMEOUT)
+			pon->timer.expires = jiffies + CONFIG_ZTE_PWRKEY_HARDRESET_TIMEOUT * HZ;
+			pr_info("%s: Normal mode,start %ds timer for reboot\n", __func__,
+				CONFIG_ZTE_PWRKEY_HARDRESET_TIMEOUT);
+#else
+			pon->timer.expires = jiffies + 10 * HZ;
+			pr_info("%s: Normal mode,start 10s timer for reboot\n", __func__);
+#endif
+		}
+		mod_timer(&pon->timer, pon->timer.expires);
+		schedule_delayed_work(&pon->check_pwrkey_work,
+			round_jiffies_relative(msecs_to_jiffies(POWER_KEY_CHECK_MS)));
+		pr_info("power key pressed\n");
+	} else {
+		del_timer(&pon->timer);
+		schedule_work(&pon->pwrkey_release_work);
+		pr_info("power key released\n");
+	}
 	return IRQ_HANDLED;
 }
 
 static irqreturn_t qpnp_kpdpwr_bark_irq(int irq, void *_pon)
 {
+	/* zte_pm */
+	pr_info("power key bark trigger\n");
+	/* zte_pm */
 	return IRQ_HANDLED;
 }
 
@@ -905,7 +1049,9 @@ static irqreturn_t qpnp_cblpwr_irq(int irq, void *_pon)
 {
 	int rc;
 	struct qpnp_pon *pon = _pon;
-
+	/* zte_pm */
+	pr_info("%s qpnp_cblpwr_irq  trigger\n", __func__);
+	/* zte_pm */
 	rc = qpnp_pon_input_dispatch(pon, PON_CBLPWR);
 	if (rc)
 		dev_err(&pon->spmi->dev, "Unable to send input event\n");
@@ -1028,7 +1174,9 @@ static irqreturn_t qpnp_resin_bark_irq(int irq, void *_pon)
 
 	/* disable the bark interrupt */
 	disable_irq_nosync(irq);
-
+	/* zte_pm */
+	pr_info("ZTE_PM resin_bark\n");
+	/* zte_pm */
 	cfg = qpnp_get_cfg(pon, PON_RESIN);
 	if (!cfg) {
 		dev_err(&pon->spmi->dev, "Invalid config pointer\n");
@@ -1983,7 +2131,87 @@ static int read_gen2_pon_off_reason(struct qpnp_pon *pon, u16 *reason,
 
 	return 0;
 }
+/*****************hww add power reason node start*******************/
+#ifdef CONFIG_ENABLE_POWER_REASON_NODE
+int zte_poweron_reason;
+int zte_poweroff_reason;
+extern int zte_power_panic;
+static ssize_t zte_poweron_reason_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int ret = 0;
 
+	if (zte_poweron_reason >= 0 && zte_poweron_reason < ARRAY_SIZE(qpnp_pon_reason)) {
+		ret = snprintf(buf, 64, "%s\n", qpnp_pon_reason[zte_poweron_reason]);
+	} else {
+		ret = snprintf(buf, 64, "ZTE Power-on reason mismatch\n");
+	}
+
+	return ret;
+}
+
+static ssize_t zte_poweroff_reason_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int retval = 0;
+
+	if (zte_poweroff_reason >= 0 && zte_poweroff_reason < ARRAY_SIZE(qpnp_poff_reason)) {
+		retval = snprintf(buf, 64, "%s\n", qpnp_poff_reason[zte_poweroff_reason]);
+	} else {
+		retval = snprintf(buf, 64, "ZTE Power-off reason mismatch\n");
+	}
+
+	return retval;
+}
+
+static ssize_t zte_restart_reason_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int retvalue = 0;
+
+	if (zte_power_panic == PON_RESTART_REASON_PANIC) {
+		retvalue = snprintf(buf, 64, "ZTE Power-restart from Panic !\n");
+	} else {
+		retvalue = snprintf(buf, 64, "ZTE Power-restart Normal !\n");
+	}
+	return retvalue;
+}
+
+static DEVICE_ATTR(zte_poweron_reason, 0664,  zte_poweron_reason_show, NULL);
+static DEVICE_ATTR(zte_poweroff_reason, 0664,  zte_poweroff_reason_show, NULL);
+static DEVICE_ATTR(zte_restart_reason, 0664,  zte_restart_reason_show, NULL);
+
+static struct attribute *zte_power_reason_attributes[] = {
+	&dev_attr_zte_poweron_reason.attr,
+	&dev_attr_zte_poweroff_reason.attr,
+	&dev_attr_zte_restart_reason.attr,
+		NULL,
+};
+static struct attribute_group zte_power_reason_attribute_group = {
+	.attrs = zte_power_reason_attributes
+};
+
+int zte_power_reason_debug_func(void)
+{
+	int err = 0;
+	struct kobject *zte_power_reason_kobj;
+
+	pr_err("%s: welcome to zte_power_reason_debug_func !\n", __func__);
+
+	zte_power_reason_kobj = kobject_create_and_add("power_reason", NULL);
+	if (!zte_power_reason_kobj) {
+		err = -EINVAL;
+		pr_info("%s() - ERROR Unable to create zte_power_reason_kobj.\n", __func__);
+		return -EIO;
+	}
+	err = sysfs_create_group(zte_power_reason_kobj, &zte_power_reason_attribute_group);
+	if (err != 0) {
+		pr_info("%s - ERROR zte_power_reason_kobj failed.\n", __func__);
+		kobject_put(zte_power_reason_kobj);
+		return -EIO;
+	}
+	pr_info("%s succeeded.\n", __func__);
+	return err;
+}
+#endif
+/*****************hww add power reason node end*******************/
 static int qpnp_pon_probe(struct spmi_device *spmi)
 {
 	struct qpnp_pon *pon;
@@ -2108,7 +2336,11 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 			rc);
 		return rc;
 	}
-
+/***********hww add power reason node start**************/
+#ifdef CONFIG_ENABLE_POWER_REASON_NODE
+	zte_poweron_reason = ffs(pon_sts) - 1;
+#endif
+/************hww add power reason node end**************/
 	index = ffs(pon_sts) - 1;
 	cold_boot = !qpnp_pon_is_warm_reset();
 	if (index >= ARRAY_SIZE(qpnp_pon_reason) || index < 0) {
@@ -2140,6 +2372,11 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 		}
 		poff_sts = buf[0] | (buf[1] << 8);
 	}
+/***********hww add power reason node start**************/
+#ifdef CONFIG_ENABLE_POWER_REASON_NODE
+	zte_poweroff_reason  = ffs(poff_sts) - 1 + reason_index_offset;
+#endif
+/***********hww add power reason node end***************/
 	index = ffs(poff_sts) - 1 + reason_index_offset;
 	if (index >= ARRAY_SIZE(qpnp_poff_reason) || index < 0) {
 		dev_info(&pon->spmi->dev,
@@ -2232,6 +2469,13 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 	dev_set_drvdata(&spmi->dev, pon);
 
 	INIT_DELAYED_WORK(&pon->bark_work, bark_work_func);
+
+	init_timer(&pon->timer);
+	pon->timer.data = (unsigned long)pon;
+	pon->timer.function = pwrkey_timer;
+	INIT_WORK(&pon->pwrkey_poweroff_work, pwrkey_poweroff);
+	INIT_WORK(&pon->pwrkey_release_work, pwrkey_release);
+	INIT_DELAYED_WORK(&pon->check_pwrkey_work, check_pwrkey);
 
 	/* register the PON configurations */
 	rc = qpnp_pon_config_init(pon);
@@ -2351,6 +2595,11 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 					"qcom,store-hard-reset-reason");
 
 	qpnp_pon_debugfs_init(spmi);
+/***********hww add power reason node start**************/
+#ifdef CONFIG_ENABLE_POWER_REASON_NODE
+	zte_power_reason_debug_func();
+#endif
+/***********hww add power reason node end**************/
 	return 0;
 }
 

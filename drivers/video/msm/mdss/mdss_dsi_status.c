@@ -31,7 +31,13 @@
 #include "mdss_panel.h"
 #include "mdss_mdp.h"
 
+/*zte modify begin,for lcd esd check error ctrl,20180228 */
+#ifdef CONFIG_ZTE_LCD_ESD_ERROR_CTRL
+#define STATUS_CHECK_INTERVAL_MS 2500
+#else
 #define STATUS_CHECK_INTERVAL_MS 5000
+#endif
+/*zte modify end,for lcd esd check error ctrl,20180228 */
 #define STATUS_CHECK_INTERVAL_MIN_MS 50
 #define DSI_STATUS_CHECK_INIT -1
 #define DSI_STATUS_CHECK_DISABLE 1

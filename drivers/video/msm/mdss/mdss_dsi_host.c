@@ -55,7 +55,8 @@ struct mdss_hw mdss_dsi1_hw = {
 	.irq_handler = mdss_dsi_isr,
 };
 
-
+#include "zte_lcd_common.h"
+extern struct mdss_dsi_ctrl_pdata *g_zte_ctrl_pdata;
 #define DSI_EVENT_Q_MAX	4
 
 #define DSI_BTA_EVENT_TIMEOUT (HZ / 10)
@@ -1117,6 +1118,12 @@ static int mdss_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
 	lenp = ctrl->status_valid_params ?: ctrl->status_cmds_rlen;
 
 	for (i = 0; i < ctrl->status_cmds.cmd_cnt; ++i) {
+#ifdef CONFIG_ZTE_LCD_CHANGE_IC_PAGE
+		if (ctrl->zte_lcd_ctrl->enable_change_page) {
+			if (i == ctrl->status_cmds.cmd_cnt-1)
+				ctrl->zte_lcd_ctrl->zte_change_ic_page(1);
+		}
+#endif
 		memset(&cmdreq, 0, sizeof(cmdreq));
 		cmdreq.cmds = ctrl->status_cmds.cmds + i;
 		cmdreq.cmds_cnt = 1;
@@ -1139,6 +1146,13 @@ static int mdss_dsi_read_status(struct mdss_dsi_ctrl_pdata *ctrl)
 		memcpy(ctrl->return_buf + start,
 			ctrl->status_buf.data, lenp[i]);
 		start += lenp[i];
+
+#ifdef CONFIG_ZTE_LCD_CHANGE_IC_PAGE
+		if (ctrl->zte_lcd_ctrl->enable_change_page) {
+			if (i == ctrl->status_cmds.cmd_cnt-1)
+				ctrl->zte_lcd_ctrl->zte_change_ic_page(0);
+		}
+#endif
 	}
 
 	return rc;
